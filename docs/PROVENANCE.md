@@ -8,11 +8,11 @@
 
 ## 一、文件级
 
-上游共 10 个文件，其中 4 个一字未改：
+上游共 10 个文件，其中 3 个一字未改：
 
 | 文件 | 状态 |
 | --- | --- |
-| `.gitignore` | 原样保留 |
+| `.gitignore` | 已修改 |
 | `LICENSE` | 原样保留 |
 | `README.en.md` | 已修改 |
 | `README.md` | 已修改 |
@@ -45,17 +45,6 @@
 - `test/browser/fixture.js`
 - `test/browser/harness.html`
 - `test/browser/probe.js`
-- `test/browser/shots/screenshot-1795154191788.png`
-- `test/browser/shots/screenshot-1795155420814.png`
-- `test/browser/shots/screenshot-1795155624093.png`
-- `test/browser/shots/screenshot-1795155625388.png`
-- `test/browser/shots/screenshot-1795155846462.png`
-- `test/browser/shots/screenshot-1795155847319.png`
-- `test/browser/shots/screenshot-1795155941576.png`
-- `test/browser/shots/screenshot-1795155942686.png`
-- `test/browser/shots/screenshot-1795156006157.png`
-- `test/browser/shots/screenshot-1795157356099.png`
-- `test/browser/shots/screenshot-1795157357144.png`
 
 ## 二、`lib/client.js` 函数级
 

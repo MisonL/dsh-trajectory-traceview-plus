@@ -29,3 +29,5 @@ test/render-repro.test.cjs
 Thumbs.db
 .idea/
 .vscode/
+# browser-check --shots 产物（每次生成带时间戳的新文件，不入库）
+test/browser/shots/
