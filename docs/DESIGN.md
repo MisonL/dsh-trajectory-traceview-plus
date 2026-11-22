@@ -6709,3 +6709,59 @@ running+partial同调用 → [{"kind":"tool","name":"read"}] ←不再有假卡
 
 **在当前可验证的范围内，没有已知的、在真实数据上可达的缺陷。**剩余风险集中在
 "sighted/SR/触摸"这类需要人工确认的交互，以及发布包的实机安装。
+
+
+###13.32首发 npm 发布：0.10.0（2026-11-22）
+
+####发布前的实测记录
+
+|检查 |结果 |
+|---|---|
+|`npm whoami` |`mison` |
+|registry 上是否已存在该包 |`E404`，首发 |
+|`build-client --check` |一致 |
+|`node --check lib/client.js` |OK |
+|`provenance --check` |OK |
+|smoke |exit=0（93 道守卫） |
+|browser-check |PASS（13 项） |
+|`npm pack` 内容 |22 个文件：lib/、src/、scripts/、docs/、cordis.patch.yml、README×2、CHANGELOG、LICENSE、screenshot |
+|夹带检查 |无 `test/`、无 `node_modules`、无 `.tgz` |
+|tarball 装入干净消费者目录 |成功；`lib/client.js` 325,936 字节且含 `__ModuleLoader__` |
+
+####版本号与标签
+
+`0.9.29 → 0.10.0`。按 README §14 的号段规则，这次含新增能力（以及一批崩溃/数据正确性修复），
+取 **minor**。
+
+GitHub 侧同步：`main` 推到 `e256009`，tag `v0.10.0` 已推送（`refs/tags/v0.10.0`）。
+
+####发布
+
+```
+npm publish → + dsh-trajectory-traceview-plus@0.10.0
+package size 931.8 kB / unpacked 1.7 MB / 22 files
+shasum fabb2edf7783828f29923b01b1e1eafe8c1bac68
+```
+
+####发布后验证
+
+`npm view ... version` 立刻返回 `0.10.0`，但**从 registry 安装有传播延迟**：
+连续 6 次 `npm install`（每次间隔 15s）都报 `notarget`，第 7 次加 `--prefer-online`
+并清掉 `node_modules`/`package-lock.json` 后成功。
+
+装到干净目录后实测：
+
+```
+version 0.10.0 | engines.dsh =0.2.2-rc.2
+host apply 是函数: true
+client.js 325,936 字节 | 经典脚本: true
+cordis.patch.yml / CHANGELOG.md / LICENSE / README.md / src/30-helpers.js / docs/PROVENANCE.md 全部存在
+```
+
+####一个过程教训
+
+发布后第一次安装验证连续失败 6 次，我差点把它当成"发布包有问题"。实际是 **npm registry 的
+缓存/传播延迟**：`npm view` 走的是一个路径，`npm install` 的解析走另一个（本地缓存优先）。
+用 `--prefer-online` 并清掉 lockfile 才看到真相。
+
+**教训：`npm view` 能看到 ≠ `npm install` 能装到。**两者要分别验证。
