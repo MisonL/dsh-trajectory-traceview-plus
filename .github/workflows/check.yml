@@ -1,0 +1,68 @@
+name: check
+
+# Every gate here is a command a maintainer can run locally, in the same order.
+# The point is not "trust CI instead of testing" — it is that four of these are
+# cheap and mechanical, and a human forgets them exactly when they are in a hurry
+# to publish. `scripts/provenance.mjs` in particular regenerates a document from
+# `git show v0.3.0`, so a stale file means the published provenance claim is false.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push supersedes the previous run. Tags are listed separately so a
+  # release build is never cancelled by a later commit on main.
+  group: check-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # provenance.mjs diffs against the upstream tag v0.3.0; a shallow clone
+          # would make it fail with "not available (not a git checkout?)" and the
+          # --check would then compare against an empty baseline.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # lib/client.js is generated from src/*.js. If someone edits src/ and forgets
+      # to rebuild, every other check still passes while the shipped bundle is the
+      # old one — so this runs first.
+      - name: Generated bundle matches src/
+        run: node scripts/build-client.mjs --check
+
+      - name: Bundle parses
+        run: node --check lib/client.js
+
+      - name: Provenance is not stale
+        run: node scripts/provenance.mjs --check
+
+      # Catches version/tag/changelog disagreement before a publish, including the
+      # "tag points at a commit with a different version" case that makes the
+      # published tarball differ from the tagged tree.
+      - name: Version, tag and changelog agree
+        run: node scripts/version-check.mjs
+
+      - name: Smoke tests
+        run: node test/smoke.test.cjs
+
+# NOT run here, deliberately:
+#   scripts/browser-check.mjs — needs a real Chrome over CDP (`agent-browser`).
+#   Installed locally before release; wiring a browser into this runner is more
+#   moving parts than the check is worth, and a flaky browser job trains people
+#   to ignore red builds.
