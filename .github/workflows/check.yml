@@ -38,7 +38,11 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci
+        # --include=dev is explicit on purpose: react/react-dom are devDependencies
+        # and the smoke suite needs them. If anything in the environment sets
+        # NODE_ENV=production, a bare `npm ci` installs nothing and the suite dies
+        # with MODULE_NOT_FOUND instead of saying why.
+        run: npm ci --include=dev
 
       # lib/client.js is generated from src/*.js. If someone edits src/ and forgets
       # to rebuild, every other check still passes while the shipped bundle is the

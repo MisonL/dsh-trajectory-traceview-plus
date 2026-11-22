@@ -25,14 +25,17 @@
 
 本仓新增的文件：
 
+- `.github/workflows/check.yml`
 - `CHANGELOG.md`
 - `docs/DESIGN.md`
 - `docs/PROVENANCE.md`
+- `package-lock.json`
 - `scripts/bench-fold.mjs`
 - `scripts/browser-check.mjs`
 - `scripts/browser-harness.mjs`
 - `scripts/build-client.mjs`
 - `scripts/provenance.mjs`
+- `scripts/version-check.mjs`
 - `src/00-locale.js`
 - `src/10-styles.js`
 - `src/20-fields.js`

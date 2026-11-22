@@ -8,6 +8,26 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
+// React is a devDependency: the suite renders Markdown/link output to static
+// markup to prove model-supplied `javascript:` URLs never reach the DOM. Without
+// it the run died inside a lazy `require("react")` with a MODULE_NOT_FOUND stack
+// that named a line number instead of the cause. `NODE_ENV=production` makes
+// `npm ci` skip devDependencies, which is the usual way to get here — say so.
+for (const dep of ["react", "react-dom"]) {
+	try {
+		require.resolve(dep);
+	} catch {
+		console.error(
+			"smoke test cannot start: `" + dep + "` is not installed.\n" +
+			"It is a devDependency (the suite renders Markdown to static markup).\n" +
+			"If NODE_ENV=production is set, npm skips devDependencies — run:\n" +
+			"    npm ci --include=dev\n" +
+			"or unset NODE_ENV and run `npm install`."
+		);
+		process.exit(1);
+	}
+}
+
 const FILE = path.join(__dirname, "..", "lib", "client.js");
 const src = fs.readFileSync(FILE, "utf8");
 
