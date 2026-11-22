@@ -210,10 +210,26 @@ node scripts/provenance.mjs
 改了 `src/`却忘了重建时，`--check`会失败，`test/smoke.test.cjs`也会报 `BUILD1`。`lib/index.js`（宿主半部）是无操作桩；`lib/client.js`是经典脚本（`window.__ModuleLoader__.load`），由客户端模块系统直接服务。
 
 ```powershell
-node test/smoke.test.cjs
+npm run check              # build --check + version-check + smoke（日常提交够用）
+npm test                   # 只跑 smoke
 ```
 
 自测用 mock 快照覆盖：树构建 / 请求附加 / 压缩请求配对 / 子调用详情 / prompt diff / 步骤计时 / 搜索匹配 / Markdown 导出 / token 统计。
+
+**需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
+
+```powershell
+node scripts/browser-check.mjs          # 起 harness 并断言 13 项行为
+node scripts/browser-check.mjs --shots  # 另外存 375px 截图
+```
+
+它需要 `agent-browser`（Chrome via CDP）。**故意不进 CI**：把浏览器塞进 runner 的
+活动部件比这项检查本身更值得担心，而一个 flaky 的浏览器任务会训练人忽略红灯。
+发布前在本地跑。
+
+其它脚本：`scripts/bench-fold.mjs` 量纯 fold 的耗时（流式路径的性能基线），
+`scripts/browser-harness.mjs` 生成上面那个独立 harness 页面
+（`test/browser/harness.html`），一般由 `browser-check` 自动调用。
 
 ## 12. 兼容性与数据契约
 
@@ -254,6 +270,15 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 **发布动作**：每次改版本号时同步打 tag（`v0.9.1`），并跑 `node scripts/provenance.mjs` 刷新来源清单。两者都有测试守着：
 
 - `docs/PROVENANCE.md` 过期 → 冒烟测试直接失败（`V1`）
-- 版本号与 tag 不一致 → 暂无自动检查，人工确认
+- 版本号与 tag 不一致 → `node scripts/version-check.mjs` 直接失败（`F1`）
+- `CHANGELOG.md` 缺该版本条目 → 同上（`F2`）
+- 版本号相对已有 tag 倒退 → 同上（`F3`）
+
+这些检查都在 CI 里跑（`.github/workflows/check.yml`），push 到 main 和提 PR 时自动执行。
+门禁本身是 5 项：`build-client --check`、`node --check lib/client.js`、`provenance --check`、
+`version-check`、smoke（前面还有一步 `npm ci --include=dev` 装依赖）。
+
+本地 `npm run check` 跑其中 3 步（`build-client --check`、`version-check`、smoke），
+够用于日常提交；发布前再按 §11 把 `browser-check` 也跑一遍（13 项）。
 
 **来源可查**：`git diff v0.3.0 -- lib/client.js` 看原始差异，`docs/PROVENANCE.md` 看改动落在哪些函数，`docs/DESIGN.md` 看每处改动的原因。

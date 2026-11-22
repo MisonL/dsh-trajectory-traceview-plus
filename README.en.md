@@ -207,10 +207,22 @@ node scripts/provenance.mjs
 Editing `src/` without rebuilding makes `--check` fail and the smoke suite report `BUILD1`. `lib/index.js` (host half) is a no-op stub; `lib/client.js` is a classic script (`window.__ModuleLoader__.load`) served directly by the client module system.
 
 ```powershell
-node test/smoke.test.cjs
+npm run check              # build --check + version-check + smoke (enough for a commit)
+npm test                   # smoke only
 ```
 
 The tests run the helper region against mock snapshots covering: tree building / request attachment / compaction-request pairing / sub-call detail / prompt diff / step timing / search matching / Markdown export / token stats.
+
+**What needs a real browser** (`react-dom/server` cannot see scroll, focus, clipboard, intervals or layout):
+
+```powershell
+node scripts/browser-check.mjs          # builds the harness and asserts 13 behaviours
+node scripts/browser-check.mjs --shots  # also captures a 375px screenshot
+```
+
+It needs `agent-browser` (Chrome via CDP). **Deliberately not in CI**: adding a browser to the runner is more moving parts than the check is worth, and a flaky browser job trains people to ignore red builds. Run it locally before releasing.
+
+Other scripts: `scripts/bench-fold.mjs` times the pure fold that the streaming path repeats; `scripts/browser-harness.mjs` builds the standalone harness page (`test/browser/harness.html`) normally invoked by `browser-check`.
 
 ## 12. Compatibility and data contract
 
@@ -248,4 +260,12 @@ Substantive changes versus upstream: stable anchors and deep-link parsing, orpha
 
 `engines.dsh` is pinned to a **single** version, so every host upgrade may require a matching plugin release. That is why the number moves fastest — it is not feature bloat.
 
-**Release steps**: bump the version, tag it (`v0.9.1`), and run `node scripts/provenance.mjs`. The provenance doc is guarded by the smoke test (`V1`) and fails the suite when stale.
+**Release steps**: bump the version, tag it (`v0.9.1`), and run `node scripts/provenance.mjs`.
+
+Three things guard the release, and all live in CI (`.github/workflows/check.yml`) so they run on every push to `main` and every pull request:
+
+- stale `docs/PROVENANCE.md` — the smoke suite fails (`V1`)
+- version / tag disagreement — `node scripts/version-check.mjs` fails (`F1`)
+- a missing `CHANGELOG.md` entry for the version (`F2`), or a version that goes backwards relative to an existing tag (`F3`)
+
+CI runs those 5 gates plus an install step (`npm ci --include=dev`): `build-client --check`, `node --check lib/client.js`, `provenance --check`, `version-check`, smoke. `npm run check` runs 3 of them locally (build, version-check, smoke); run `browser-check` too before releasing — see §11.
