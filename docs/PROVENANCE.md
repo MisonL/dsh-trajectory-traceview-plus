@@ -25,6 +25,7 @@
 
 本仓新增的文件：
 
+- `CHANGELOG.md`
 - `docs/DESIGN.md`
 - `docs/PROVENANCE.md`
 - `scripts/bench-fold.mjs`
