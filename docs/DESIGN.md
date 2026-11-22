@@ -6765,3 +6765,53 @@ cordis.patch.yml / CHANGELOG.md / LICENSE / README.md / src/30-helpers.js / docs
 用 `--prefer-online` 并清掉 lockfile 才看到真相。
 
 **教训：`npm view` 能看到 ≠ `npm install` 能装到。**两者要分别验证。
+
+
+###13.33真机安装验证：registry 包能被 DSH 装进独立 profile（2026-11-22）
+
+§13.32 只证明了「从 registry 能 `npm install` 进一个空目录」。那不是 DSH 的安装路径。
+这一步补上真正的验证：让 `dsh plugin` 把**发布包**装进一个独立 profile。
+
+####做法
+
+不动用户现有的 web profile（那里是 `link:` 指向本仓库的开发态）。新建临时 profile：
+
+```
+dsh plugin --profile releasecheck add --save-exact dsh-trajectory-traceview-plus@0.10.0
+```
+
+`dsh plugin add` 是转发给 pnpm 的，所以语法以 `--help` 为准，不靠猜。
+
+####结果
+
+|检查 |结果 |
+|---|---|
+|本机 `dsh --version` |`0.2.2-rc.2`，与 `engines.dsh` 钉版一致 |
+|安装解析版本 |`0.10.0` |
+|engines / peer 警告 |**无** |
+|lock 里的 engines |`dsh: =0.2.2-rc.2`、`node: >=24.9.0` |
+|包内关键文件 |`lib/client.js` 325,936 / `cordis.patch.yml` 580 / `CHANGELOG.md` 1,825 字节 |
+|`node --check lib/client.js` |通过 |
+|`dsh plugin --profile releasecheck list` |列出该插件 |
+|`dsh --profile releasecheck --dump-config` |生成**启用的** `dsh-trajectory-traceview-plus` 行 |
+
+####清理（我逐条复核过，不是只听报告）
+
+|断言 |复核结果 |
+|---|---|
+|临时 profile 已删除 |`~/.dsh/profiles/releasecheck` 不存在；现存只有 desktop/dsh-tui/headless/node_modules/web |
+|无残留进程 |`pgrep -fl releasecheck` 无输出 |
+|未碰 3080 |worker 没有启动宿主，只用 `--dump-config` 做静态确认 |
+|web profile 未被动 |仍是 `link:/Volumes/Work/code/dsh-trajectory-traceview-plus` |
+|仓库未被改 |工作区 0、HEAD 仍是 a147246 |
+|registry 真实可达 |`npm view --prefer-online` → `0.10.0` |
+
+####这一步补上了什么
+
+之前所有验证都在"源码态 + 浏览器 harness"里完成。这一条第一次回答：
+**一个普通用户 `dsh plugin add` 这个包名，能不能真的装上、能不能被 loader 认成有效插件行。**
+答案是能。
+
+仍然没验证的：装好后**在浏览器里点开「轨迹视图」**是否正常。那需要另起宿主，
+而本机的 3080 是用户正在用的实例，不值得为验证去动它——`browser-check` 已经在
+同一份 `lib/client.js`（325,936 字节，与发布包逐字节相同）上验过 13 项行为。
