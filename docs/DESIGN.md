@@ -6815,3 +6815,77 @@ dsh plugin --profile releasecheck add --save-exact dsh-trajectory-traceview-plus
 仍然没验证的：装好后**在浏览器里点开「轨迹视图」**是否正常。那需要另起宿主，
 而本机的 3080 是用户正在用的实例，不值得为验证去动它——`browser-check` 已经在
 同一份 `lib/client.js`（325,936 字节，与发布包逐字节相同）上验过 13 项行为。
+
+
+###13.34补上 CI，并用一次故意的红灯验证它真的会红（2026-11-22）
+
+此前整个仓库**没有任何 CI**（`gh run list` 空、`actions/runs total_count=0`）。
+README §14 自己写着「版本号与 tag 不一致 → 暂无自动检查，人工确认」——
+这类失败是静默的：`npm publish` 不要求 tag 存在，tag 也可以指向一个
+`package.json` 仍是旧版本的提交。
+
+####加了什么
+
+|文件 |作用 |
+|---|---|
+|`.github/workflows/check.yml` |push main / pull_request / tag / 手动触发；5 步门禁 |
+|`scripts/version-check.mjs` |F1 tag 指的版本与提交不符；F2 CHANGELOG 缺条目；F3 版本倒退 |
+|`package-lock.json` |CI 用 `npm ci` 所需的锁文件 |
+
+三条失败条件逐条变异验证，均翻红且文案准确。无 tag 时只提示不失败
+（开发中先改版本后打 tag 是正常状态，不能训练人忽略红灯）。
+
+workflow 里显式 `npm ci --include=dev`，注释写清原因：
+这台机器 `NODE_ENV=production`，`npm ci` 会因此跳过 devDependencies，
+而 smoke 需要 react/react-dom 做 Markdown 静态渲染。
+
+####两处只有新克隆才暴露的问题
+
+我在本地跑全绿，push 后自己在 **fresh clone** 里按 CI 顺序复跑，才发现：
+
+1. **PROVENANCE 过期**：我上一条提交新增了三个受跟踪文件，但没重新生成
+   `docs/PROVENANCE.md`——它列的就是「相对上游新增的文件」。本地之所以绿，
+   是因为那次 `--check` 跑在提交**之前**。新增文件后必须重跑 provenance。
+
+2. **smoke MODULE_NOT_FOUND**：`NODE_ENV=production` 让 `npm ci` 不装 devDeps。
+   报错栈指向第 1725 行一个懒加载 require，完全看不出根因。
+   修法：workflow 显式 `--include=dev` + smoke 开头 `require.resolve` 预检，
+   缺依赖时直接说原因和命令。
+
+修完后再在第二个 fresh clone 跑，五步全绿。
+
+####真实 CI 结果
+
+```
+push eec67b5 → GitHub Actions run 45026664312 → completed / success
+各步骤（checkout / setup-node / Install / build --check / node --check /
+provenance --check / version-check / smoke）全部 success
+```
+
+workflow 在 GitHub 上状态 `active`。
+
+####红灯验证
+
+只证明"绿灯"不够——CI 也必须能被真实破坏。我建了 `ci-selftest` 分支，
+**故意只改 `src/00-locale.js` 而不重建 `lib/client.js`**（这是本项目最常见的
+事故：编辑 src 以为生效了，但发布的还是旧 bundle）。
+
+又临时把 workflow 的 `branches` 扩到该分支以触发它。
+
+结果：
+
+```
+run 45029185542 → completed / failure
+失败步骤：5. Generated bundle matches src/ — failure
+后续 6~9 全部 skipped（门禁按预期短路）
+```
+
+删掉自测分支后复查：main=eec67b5、origin/main 同步、工作区干净、
+main 的 CI 仍是 success。
+
+####未做
+
+- **tag 触发路径未单独验证**：workflow 声明了 `tags: ['v*']`，但为验证而强推 release tag
+  不合适；下次正常打 tag 时自然验证。
+- **browser-check 没纳入 CI**：需要真实 Chrome/CDP，且 flaky 会训练人忽略红灯。
+  发布前在本地跑它（13 项），已实测。
