@@ -98,16 +98,28 @@ Each item is tagged **〔upstream〕** (present in upstream v0.3.0) or **〔Plus
 ## 4. Directory layout
 
 ```
-dsh-trajectory-traceview/   # repo root (npm package name is dsh-trajectory-traceview-plus)
-├── package.json            # dsh.bundle.patch + dsh.client (browser declaration) + exports["./client"]
-├── cordis.patch.yml        # composition row: a single plugin record (no route, no config)
-├── LICENSE                 # MIT
-├── screenshot/             # screenshots for the README "Preview" section
+dsh-trajectory-traceview-plus/   # repo root (directory name == npm package name)
+├── package.json          # dsh.bundle.patch + dsh.client (browser declaration) + exports["./client"]
+├── package-lock.json     # for CI's npm ci only (not in the published files list)
+├── cordis.patch.yml      # composition row: a single plugin record (no route, no config)
+├── LICENSE               # MIT
+├── CHANGELOG.md          # release record (version-check verifies the entry)
+├── screenshot/           # screenshots for the README "Preview" section
+├── .github/workflows/
+│   └── check.yml         # CI: the five gates, in the same order as the local commands
+├── src/                  # browser source (lib/client.js is generated from it; never hand-edit)
+├── scripts/
+│   ├── build-client.mjs  # src/ -> lib/client.js
+│   ├── provenance.mjs    # generates docs/PROVENANCE.md
+│   ├── version-check.mjs # version / tag / CHANGELOG agreement
+│   ├── browser-check.mjs # real-browser assertions (needs agent-browser)
+│   └── browser-harness.mjs / bench-fold.mjs
+├── docs/                 # DESIGN.md (why each change) / PROVENANCE.md (generated)
 ├── test/
-│   └── smoke.test.cjs      # zero-dependency helper unit tests (plain node)
+│   └── smoke.test.cjs    # helper unit tests (plain node)
 └── lib/
-    ├── index.js            # host half: no-op stub (browser-only plugin)
-    └── client.js           # browser bundle: the trace view (timeline / minimap / detail / raw request)
+    ├── index.js          # host half: no-op stub (browser-only plugin)
+    └── client.js         # browser bundle: the trace view (generated)
 ```
 
 ## 5. Quick start
@@ -137,7 +149,7 @@ dsh plugin --profile web remove dsh-trajectory-traceview-plus
 ### Manual install from a source directory (for equivalent verification)
 
 ```powershell
-dsh plugin --profile web add "G:\path\to\dsh-trajectory-traceview"
+dsh plugin --profile web add "G:\path\to\dsh-trajectory-traceview-plus"
 ```
 
 ### Verify it loaded

@@ -101,16 +101,28 @@
 ## 4. 目录结构
 
 ```
-dsh-trajectory-traceview/   # 仓库根（npm 包名为 dsh-trajectory-traceview-plus）
-├── package.json            # dsh.bundle.patch + dsh.client（浏览器端声明）+ exports["./client"]
-├── cordis.patch.yml        # 组合行：仅插入一行插件记录（无路由、无配置）
-├── LICENSE                 # MIT
-├── screenshot/             # 效果截图（README「效果预览」用）
+dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
+├── package.json          # dsh.bundle.patch + dsh.client（浏览器端声明）+ exports["./client"]
+├── package-lock.json     # 仅用于 CI 的 npm ci（发布包的 files 白名单不包含它）
+├── cordis.patch.yml      # 组合行：仅插入一行插件记录（无路由、无配置）
+├── LICENSE               # MIT
+├── CHANGELOG.md          # 发布记录（version-check 会核对版本条目）
+├── screenshot/           # 效果截图（README「效果预览」用）
+├── .github/workflows/
+│   └── check.yml         # CI：5 项门禁（本地命令的同序复现）
+├── src/                  # 浏览器端源码（lib/client.js 由它生成，不要手改产物）
+├── scripts/
+│   ├── build-client.mjs  # src/ -> lib/client.js
+│   ├── provenance.mjs    # 生成 docs/PROVENANCE.md
+│   ├── version-check.mjs # 版本 / tag / CHANGELOG 一致性
+│   ├── browser-check.mjs # 真浏览器断言（需 agent-browser）
+│   └── browser-harness.mjs / bench-fold.mjs
+├── docs/                 # DESIGN.md（每处改动的原因）/ PROVENANCE.md（自动生成）
 ├── test/
-│   └── smoke.test.cjs      # 纯 helpers 单测（零依赖，node 直接跑）
+│   └── smoke.test.cjs    # 纯 helpers 单测（node 直接跑）
 └── lib/
-    ├── index.js            # 宿主半部：无操作桩（纯浏览器端插件）
-    └── client.js           # 浏览器 bundle：轨迹视图（时间轴 / minimap / 详情 / 原始请求）
+    ├── index.js          # 宿主半部：无操作桩（纯浏览器端插件）
+    └── client.js         # 浏览器 bundle：轨迹视图（生成物）
 ```
 
 ## 5. 快速开始
@@ -140,7 +152,7 @@ dsh plugin --profile web remove dsh-trajectory-traceview-plus
 ### 从源码目录手动安装（等价验证用）
 
 ```powershell
-dsh plugin --profile web add "G:\path\to\dsh-trajectory-traceview"
+dsh plugin --profile web add "G:\path\to\dsh-trajectory-traceview-plus"
 ```
 
 ### 验证是否加载成功
