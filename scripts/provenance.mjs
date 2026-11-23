@@ -83,10 +83,25 @@ const fileRows = upstreamFiles.map((file) => {
   }
   return { file, status };
 });
-// Tracked additions only (`git ls-files`), so the list is stable regardless of
-// whether the new files are committed yet, and never picks up untracked scratch.
-const addedFiles = execFileSync('git', ['diff', '--name-status', '--diff-filter=A', UPSTREAM_REF], { cwd: ROOT, encoding: 'utf8' })
-  .trim().split('\n').filter(Boolean).map((line) => line.split('\t')[1])
+// Added files come from THREE sources, all measured against the working tree:
+//   1. `git diff --diff-filter=A`        — added and staged/committed
+//   2. `git diff --diff-filter=A --cached` — added and staged but not yet committed
+//   3. `git ls-files --others`           — created on disk, not yet added at all
+//
+// Source 3 is what makes this trustworthy and it was missing. `provenance` is
+// normally run *before* committing (the docs tell you to regenerate after adding
+// a file), but `git diff` cannot see a file that is not in the index yet. So the
+// regenerated document omitted the new file, and `--check` then failed on the
+// commit the user was about to make — twice in one session, both times in CI
+// after a push, which is the most expensive possible moment to learn about a
+// missing line. Ignored paths are excluded by `--exclude-standard`, so local
+// scratch never leaks in.
+const addedFiles = [...new Set([
+  ...git('diff', '--name-status', '--diff-filter=A', UPSTREAM_REF).trim().split('\n').filter(Boolean).map((line) => line.split('\t')[1]),
+  ...git('diff', '--name-status', '--diff-filter=A', '--cached', UPSTREAM_REF).trim().split('\n').filter(Boolean).map((line) => line.split('\t')[1]),
+  ...git('ls-files', '--others', '--exclude-standard').trim().split('\n').filter(Boolean),
+])]
+  .filter((f) => !upstreamFiles.includes(f))
   .concat(['docs/PROVENANCE.md', 'scripts/provenance.mjs'])
   .filter((f, i, all) => all.indexOf(f) === i)
   .sort();

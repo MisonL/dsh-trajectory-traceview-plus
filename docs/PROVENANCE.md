@@ -34,6 +34,7 @@
 - `scripts/browser-check.mjs`
 - `scripts/browser-harness.mjs`
 - `scripts/build-client.mjs`
+- `scripts/doc-heading-check.mjs`
 - `scripts/doc-ref-check.mjs`
 - `scripts/provenance.mjs`
 - `scripts/version-check.mjs`
