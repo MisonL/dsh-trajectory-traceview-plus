@@ -6828,7 +6828,7 @@ README §14 自己写着「版本号与 tag 不一致 → 暂无自动检查，�
 
 |文件 |作用 |
 |---|---|
-|`.github/workflows/check.yml` |push main / pull_request / tag / 手动触发；5 步门禁 |
+|`.github/workflows/check.yml` |push main / pull_request / tag / 手动触发；5 步门禁（**后扩至 7 项**，见 §13.35 之后的两道文档校验）|
 |`scripts/version-check.mjs` |F1 tag 指的版本与提交不符；F2 CHANGELOG 缺条目；F3 版本倒退 |
 |`package-lock.json` |CI 用 `npm ci` 所需的锁文件 |
 
