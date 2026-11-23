@@ -291,7 +291,8 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 门禁本身是 6 项：`build-client --check`、`node --check lib/client.js`、`provenance --check`、
 `version-check`、`doc-ref-check`、smoke（前面还有一步 `npm ci --include=dev` 装依赖）。
 
-本地 `npm run check` 跑其中 4 步（`build-client --check`、`version-check`、`doc-ref-check`、smoke），
-够用于日常提交；发布前再按 §11 把 `browser-check` 也跑一遍（13 项）。
+本地 `npm run check` 跑其中 5 步（`build-client --check`、`provenance --check`、`version-check`、
+`doc-ref-check`、smoke）——只差 CI 里的 `node --check lib/client.js`，够用于日常提交；
+发布前再按 §11 把 `browser-check` 也跑一遍（13 项）。
 
 **来源可查**：`git diff v0.3.0 -- lib/client.js` 看原始差异，`docs/PROVENANCE.md` 看改动落在哪些函数，`docs/DESIGN.md` 看每处改动的原因。

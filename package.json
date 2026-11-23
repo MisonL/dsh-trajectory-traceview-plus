@@ -62,7 +62,7 @@
   },
   "scripts": {
     "build": "node scripts/build-client.mjs",
-    "check": "node scripts/build-client.mjs --check && node scripts/version-check.mjs && node scripts/doc-ref-check.mjs && node test/smoke.test.cjs",
+    "check": "node scripts/build-client.mjs --check && node scripts/provenance.mjs --check && node scripts/version-check.mjs && node scripts/doc-ref-check.mjs && node test/smoke.test.cjs",
     "test": "node test/smoke.test.cjs"
   }
 }
