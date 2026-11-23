@@ -233,7 +233,7 @@ npm test                   # 只跑 smoke
 **需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
 
 ```powershell
-node scripts/browser-check.mjs          # 起 harness 并断言 13 项行为
+node scripts/browser-check.mjs          # 起 harness，跑 47 条断言 / 记录 13 组观测
 node scripts/browser-check.mjs --shots  # 另外存 375px 截图
 ```
 
@@ -294,6 +294,6 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 
 本地 `npm run check` 跑其中 6 步（`build-client --check`、`provenance --check`、`version-check`、
 `doc-ref-check`、`doc-heading-check`、smoke）——只差 CI 里的 `node --check lib/client.js`，够用于日常提交；
-发布前再按 §11 把 `browser-check` 也跑一遍（13 项）。
+发布前再按 §11 把 `browser-check` 也跑一遍。
 
 **来源可查**：`git diff v0.3.0 -- lib/client.js` 看原始差异，`docs/PROVENANCE.md` 看改动落在哪些函数，`docs/DESIGN.md` 看每处改动的原因。

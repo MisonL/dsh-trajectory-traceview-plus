@@ -62,7 +62,12 @@ console.log("browser-check: stations=" + parsed.info.stations +
 	" copied=" + parsed.info.copied +
 	" replay=" + parsed.info.replay);
 if (parsed.failures.length === 0) {
-	console.log("browser-check: PASS (" + Object.keys(parsed.info).length + " checks recorded)");
+	// This count is the number of observation groups in `info`, NOT the number of
+	// assertions — probe.js makes 47 of those. Reporting it as "checks" made the
+	// README claim "13 项行为" for a file with 47 assertions, which undersold the
+	// coverage by 3.5x. Say what it actually counts.
+	const groups = Object.keys(parsed.info).length;
+	console.log("browser-check: PASS (" + groups + " observation groups recorded, 0 failures)");
 	process.exit(0);
 }
 console.log("browser-check: FAIL");
