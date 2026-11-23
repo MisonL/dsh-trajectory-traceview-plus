@@ -62,6 +62,11 @@ jobs:
       - name: Version, tag and changelog agree
         run: node scripts/version-check.mjs
 
+      # docs/DESIGN.md carries ~170 section references. A renumbered or withdrawn
+      # section leaves prose pointing at nothing; this fails instead.
+      - name: Doc cross-references resolve
+        run: node scripts/doc-ref-check.mjs
+
       - name: Smoke tests
         run: node test/smoke.test.cjs
 

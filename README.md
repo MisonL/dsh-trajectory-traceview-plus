@@ -115,6 +115,7 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 │   ├── build-client.mjs  # src/ -> lib/client.js
 │   ├── provenance.mjs    # 生成 docs/PROVENANCE.md
 │   ├── version-check.mjs # 版本 / tag / CHANGELOG 一致性
+│   ├── doc-ref-check.mjs # docs/DESIGN.md 的 §x.y 引用不断链
 │   ├── browser-check.mjs # 真浏览器断言（需 agent-browser）
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md（每处改动的原因）/ PROVENANCE.md（自动生成）
@@ -287,10 +288,10 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 - 版本号相对已有 tag 倒退 → 同上（`F3`）
 
 这些检查都在 CI 里跑（`.github/workflows/check.yml`），push 到 main 和提 PR 时自动执行。
-门禁本身是 5 项：`build-client --check`、`node --check lib/client.js`、`provenance --check`、
-`version-check`、smoke（前面还有一步 `npm ci --include=dev` 装依赖）。
+门禁本身是 6 项：`build-client --check`、`node --check lib/client.js`、`provenance --check`、
+`version-check`、`doc-ref-check`、smoke（前面还有一步 `npm ci --include=dev` 装依赖）。
 
-本地 `npm run check` 跑其中 3 步（`build-client --check`、`version-check`、smoke），
+本地 `npm run check` 跑其中 4 步（`build-client --check`、`version-check`、`doc-ref-check`、smoke），
 够用于日常提交；发布前再按 §11 把 `browser-check` 也跑一遍（13 项）。
 
 **来源可查**：`git diff v0.3.0 -- lib/client.js` 看原始差异，`docs/PROVENANCE.md` 看改动落在哪些函数，`docs/DESIGN.md` 看每处改动的原因。

@@ -112,6 +112,7 @@ dsh-trajectory-traceview-plus/   # repo root (directory name == npm package name
 │   ├── build-client.mjs  # src/ -> lib/client.js
 │   ├── provenance.mjs    # generates docs/PROVENANCE.md
 │   ├── version-check.mjs # version / tag / CHANGELOG agreement
+│   ├── doc-ref-check.mjs # DESIGN.md §x.y references resolve
 │   ├── browser-check.mjs # real-browser assertions (needs agent-browser)
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md (why each change) / PROVENANCE.md (generated)
@@ -280,4 +281,4 @@ Three things guard the release, and all live in CI (`.github/workflows/check.yml
 - version / tag disagreement — `node scripts/version-check.mjs` fails (`F1`)
 - a missing `CHANGELOG.md` entry for the version (`F2`), or a version that goes backwards relative to an existing tag (`F3`)
 
-CI runs those 5 gates plus an install step (`npm ci --include=dev`): `build-client --check`, `node --check lib/client.js`, `provenance --check`, `version-check`, smoke. `npm run check` runs 3 of them locally (build, version-check, smoke); run `browser-check` too before releasing — see §11.
+CI runs those 6 gates plus an install step (`npm ci --include=dev`): `build-client --check`, `node --check lib/client.js`, `provenance --check`, `version-check`, `doc-ref-check`, smoke. `npm run check` runs 4 of them locally (build, version-check, doc-ref-check, smoke); run `browser-check` too before releasing — see §11.
