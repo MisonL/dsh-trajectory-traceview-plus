@@ -109,7 +109,7 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 ├── CHANGELOG.md          # 发布记录（version-check 会核对版本条目）
 ├── screenshot/           # 效果截图（README「效果预览」用）
 ├── .github/workflows/
-│   └── check.yml         # CI：5 项门禁（本地命令的同序复现）
+│   └── check.yml         # CI：7 项门禁（本地命令的同序复现）
 ├── src/                  # 浏览器端源码（lib/client.js 由它生成，不要手改产物）
 ├── scripts/
 │   ├── build-client.mjs  # src/ -> lib/client.js

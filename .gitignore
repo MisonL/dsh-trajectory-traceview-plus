@@ -31,3 +31,6 @@ Thumbs.db
 .vscode/
 # browser-check --shots 产物（每次生成带时间戳的新文件，不入库）
 test/browser/shots/
+
+# browser-harness.mjs 每次生成的页面（1.6MB，且随 src/ 变化，不入库）
+test/browser/harness.html

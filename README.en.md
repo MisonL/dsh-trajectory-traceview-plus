@@ -106,7 +106,7 @@ dsh-trajectory-traceview-plus/   # repo root (directory name == npm package name
 ├── CHANGELOG.md          # release record (version-check verifies the entry)
 ├── screenshot/           # screenshots for the README "Preview" section
 ├── .github/workflows/
-│   └── check.yml         # CI: the five gates, in the same order as the local commands
+│   └── check.yml         # CI: the seven gates, in the same order as the local commands
 ├── src/                  # browser source (lib/client.js is generated from it; never hand-edit)
 ├── scripts/
 │   ├── build-client.mjs  # src/ -> lib/client.js
