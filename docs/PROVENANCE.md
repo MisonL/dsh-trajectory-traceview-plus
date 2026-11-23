@@ -8,7 +8,7 @@
 
 ## 一、文件级
 
-上游共 10 个文件，其中 3 个一字未改：
+上游共 10 个文件，其中 2 个一字未改：
 
 | 文件 | 状态 |
 | --- | --- |
@@ -20,7 +20,7 @@
 | `lib/client.js` | 已修改 |
 | `lib/index.js` | 原样保留 |
 | `package.json` | 已修改 |
-| `screenshot/overview.jpg` | 原样保留 |
+| `screenshot/overview.jpg` | 已改名 → `screenshot/overview.png` |
 | `test/smoke.test.cjs` | 已修改 |
 
 本仓新增的文件：

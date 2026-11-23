@@ -14,6 +14,10 @@
  *
  * Also flags a trailing `#`-closing mismatch, which is the other ATX foot-gun.
  *
+ * And it checks code spans, for the same reason: a single-backtick span cannot
+ * contain a backtick, so `` `case\`text\`` never closes. The source reads fine and
+ * renders as a mess. A code span containing a backtick must use a longer fence.
+ *
  *   node scripts/doc-heading-check.mjs
  */
 import { readFileSync } from 'node:fs';
@@ -44,12 +48,19 @@ lines.forEach((line, i) => {
 		// A same-line `#` immediately after a number is the usual "#7 ..." mistake.
 		if (/^#\d/.test(line)) problems.push(at + '`' + line.slice(0, 40) + '` — prose starting with `#<digit>` becomes a level-1 heading');
 	}
+
+	// Backslash-escaped backticks inside what looks like a code span. A span
+	// delimited by N backticks cannot contain a run of N+ backticks, so `a\`b\``
+	// never closes and the rest of the line renders as literal backslashes.
+	if (/\\`/.test(line)) {
+		problems.push(at + '`' + line.slice(0, 40) + '` — a code span delimited by one backtick cannot contain one; use double backticks (``…``) instead of `\\`');
+	}
 });
 
 console.log('doc-heading-check: ' + headings + ' rendered heading(s)');
 if (problems.length > 0) {
 	for (const p of problems) console.error('  ✗ ' + p);
-	console.error('doc-heading-check: FAIL (' + problems.length + ' malformed heading(s))');
+	console.error('doc-heading-check: FAIL (' + problems.length + ' malformed construct(s))');
 	process.exit(1);
 }
 console.log('DOC HEADINGS OK');

@@ -2051,7 +2051,7 @@ A1 新增：两个框必须分别带指定 `id` 与 `name`，且必须显式 `au
 
 我之前把它列为待查疑点，理由是本项目内部的 assistant 块用 `kind`（`kind:"text"`），而 `blocksText` 只认 `b.type`。查宿主源码后确认这是**两种不同来源的两种形状**：
 
-- **assistant 的 blocks**（流式缓冲）：`{kind:"text", text}` —— 宿主 `toAssistantBlock` 里 `case\`text\`: return {kind:\`text\`, text: block.text}`
+- **assistant 的 blocks**（流式缓冲）：`{kind:"text", text}` —— 宿主 `toAssistantBlock` 里 ``case`text`: return {kind:`text`, text: block.text}``
 - **`tool-result.content`**：宿主构造 tool-result 节点时写的是 `content: message.content`，即 **LLM 消息格式**，块是 `{type:"text", text}`
 
 所以 `blocksText` 认 `type` 是对的——它正好对应它被调用时拿到的那份数据（`tool-result.content`）。实测：`blocksText([{type:"text",text:"abc"}])` → `"abc"`；`[{type:"image"}]` → `"[图片]"`；`[{type:"reasoning",text:"think"}]` → `"think"`。
@@ -5323,7 +5323,7 @@ if (typeof text !== "string") text = String(text);
 
 | 位置 | 原因 |
 |---|---|
-| `id: \`t${b.callId}\`` | callId 是 Symbol 时模板字符串抛（cell id 同时是 React key，整条投影挂掉） |
+| ``id: `t${b.callId}` `` | callId 是 Symbol 时模板字符串抛（cell id 同时是 React key，整条投影挂掉） |
 | `asText(Symbol)` → `safeJsonPreview` | 已在上轮修好，这里随之消失 |
 
 **五处文本泄漏：**
@@ -6962,3 +6962,86 @@ CI  ：跑在 commit 之后 → 看得见新文件   → 清单与提交树不�
 3. 我第一次的反向验证是**无效的**：在已经 commit 过的克隆里对比，两实现都
    返回 true，看不出差别。必须回到「文件存在但未 add」这个精确状态才有信息量。
    ——这和 §13.23 那次「不忠实变异」是同一类错误：验证条件没还原到事故现场。
+
+
+### 13.36 截图扩展名撒谎，以及 provenance 把改名当成删除（2026-11-23）
+
+#### 表面问题：一个叫 .jpg 的 PNG
+
+`screenshot/overview.jpg` 是自上游导入时就在的文件（与 `v0.3.0` **逐字节相同**）。
+但它的真实格式是 PNG：
+
+```
+$ file screenshot/overview.jpg
+PNG image data, 2879 x 1712, 8-bit/color RGBA, non-interlaced
+```
+
+浏览器和 GitHub 都按内容嗅探，所以**页面上看不出来**——这也是它能一直躺着不被
+发现的原因。但按扩展名信任类型的工具会拒绝它（我自己的 `read_image` 就报了
+「.jpg 声明的类型与字节不符」）。这类"只有机器会读到"的谎言值得修，因为它的
+成本恰好落在自动化工具上。
+
+处理：`git mv` 改名为 `overview.png`，两份 README 的引用同步改。
+
+#### 顺带暴露的真问题：provenance 把改名记成删除
+
+改完名再跑 `provenance.mjs`，文件级表格变成：
+
+```
+| `screenshot/overview.jpg` | 已删除 |
+```
+
+而新文件 `overview.png` **在「本仓新增」里根本没出现**。原因有两层：
+
+1. 表格是逐条 `readFileSync(上游文件名)` 判定的，文件不在原名下就落进 `catch`
+   → `已删除`。它对"路径"忠实，但对这份文档真正要回答的问题（**内容从哪来**）是
+   误导的。
+2. 「本仓新增」只收 `--diff-filter=A`，而 `git mv` 产生的是 `R`（rename），
+   不是 `A`。所以它**两头都不在**——既没被记成上游文件，也没被记成新增文件，
+   在一份"哪部分是上游的"文档里彻底消失。
+
+这比原来的「扩展名写错」更严重：扩展名只是不好看，这个是**清单漏项**。
+
+#### 修法
+
+`fileRows` 在原名读不到时，先查 `git diff -M --diff-filter=R` 得到的
+`旧名 → 新名` 映射；映射存在且新名确实在磁盘上，状态就写
+「已改名 → 新名」，而不是「已删除」。`-M` 是 git 自己的相似度检测，所以
+"改名 + 改内容"也能识别。
+
+#### 验证（这次变异是有效的）
+
+| 变异 | 期望 | 实测 |
+|---|---|---|
+| 基线（改名保留内容） | `已改名 → overview.png` | ✓ |
+| 改成无关名字 `preview.png` | `已改名 → preview.png` | ✓ |
+| 改名 + 追加字节（内容已变） | 仍识别为改名 | ✓ |
+
+第一次尝试的变异**是无效的**：我把名字改回 `overview.jpg`，结果内容是上游原样，
+于是走的是 `原样保留` 分支，根本没碰到改名逻辑。这和 §13.23、§13.35 是同一类
+错误——**变异必须落在被测分支上**，否则"通过"没有任何信息量。
+
+#### 同类的第三处：代码片段里塞反引号
+
+写完这一节，我顺手搜了全文的「反斜杠 + 反引号」这种转义写法，发现还有两处：
+
+- 第 2054 行：`toAssistantBlock` 那段 `case` / `text` 的代码片段
+- 第 5326 行：表格里 `id: t${b.callId}` 那个模板字符串
+
+Markdown 里**单反引号围起来的代码片段不能包含反引号**——它会在内层反引号处
+提前闭合，剩下的反斜杠变成字面字符。这两处一直渲染成垃圾，而源码看起来完全
+正常。
+
+改用双反引号围栏即可。顺手把这条也加进 `doc-heading-check.mjs`：它现在同时
+检查「标题不成标题」和「代码片段不成片段」，两件事的共同点都是**源码看起来对、
+渲染出来不对**。变异验证：把其中一处改回单反引号 → 精确报 line 5326 并 exit 1。
+
+#### 教训
+
+1. **「文件不见了」有三种含义**：真删除、改名、被移动到别处。把它们压成同一个
+   `已删除` 会让清单撒谎。凡是拿 `readFileSync` 判定存在性的地方，都该问一句
+   「不存在时，它去哪了」。
+2. `git` 的 `A` 与 `R` 是两个不同的事实。用 `--diff-filter=A` 统计"新增"时，
+   改名过去的文件会被**静默丢弃**，而丢弃是无声的。
+3. 「页面上看不出来」不等于没问题。这里的两个缺陷都只能被**工具**发现——一个
+   被图片读取器发现，一个被文档一致性检查发现。肉眼 Review 一万遍也看不见。

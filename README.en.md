@@ -93,7 +93,7 @@ Each item is tagged **〔upstream〕** (present in upstream v0.3.0) or **〔Plus
 
 | Trace View overview (timeline + minimap + bottom detail / raw-request panels) |
 |:---:|
-| ![Trace View preview](screenshot/overview.jpg) |
+| ![Trace View preview](screenshot/overview.png) |
 
 ## 4. Directory layout
 

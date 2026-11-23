@@ -96,7 +96,7 @@
 
 | 轨迹视图总览（时间轴 + minimap + 底部详情 / 原始请求面板） |
 |:---:|
-| ![轨迹视图效果预览](screenshot/overview.jpg) |
+| ![轨迹视图效果预览](screenshot/overview.png) |
 
 ## 4. 目录结构
 

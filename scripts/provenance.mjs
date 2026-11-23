@@ -72,14 +72,36 @@ for (const name of cur.keys()) if (!up.has(name)) added.push(name);
 untouched.sort(); modified.sort(); added.sort(); dropped.sort();
 
 // File-level map: which upstream files survived byte-for-byte.
+//
+// A renamed upstream file needs its own status. Without it, `git mv a b` reads as
+// "a was deleted" — which is literally true of the *path* but hides the thing the
+// document exists to answer: the content came from upstream and is still here. The
+// rename is detected from git's own similarity matching (`-M`), so a file that was
+// renamed *and* edited shows as a rename rather than being silently filed as new.
 const upstreamFiles = git('ls-tree', '-r', '--name-only', UPSTREAM_REF).trim().split('\n').filter(Boolean);
+
+const renamedFrom = new Map(); // old upstream path -> new path
+for (const extra of [[], ['--cached']]) {
+  const raw = git('diff', '--name-status', '-M', '--diff-filter=R', ...extra, UPSTREAM_REF).trim();
+  if (raw === '') continue;
+  for (const line of raw.split('\n')) {
+    const [kind, from, to] = line.split('\t');
+    if (kind.startsWith('R') && from && to) renamedFrom.set(from, to);
+  }
+}
+
 const fileRows = upstreamFiles.map((file) => {
   let status;
   try {
     const now = readFileSync(join(ROOT, file), 'utf8');
     status = now === git('show', `${UPSTREAM_REF}:${file}`) ? '原样保留' : '已修改';
   } catch {
-    status = '已删除';
+    const to = renamedFrom.get(file);
+    let renamedTo = null;
+    if (to !== undefined) {
+      try { readFileSync(join(ROOT, to)); renamedTo = to; } catch { renamedTo = null; }
+    }
+    status = renamedTo !== null ? `已改名 → \`${renamedTo}\`` : '已删除';
   }
   return { file, status };
 });
