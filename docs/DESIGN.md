@@ -6104,7 +6104,7 @@ Codex 报的 11 条里，三条是**白屏级**：都在任何 station 组装之
 
 #### 一处探针夹具错误
 
-#7 我最初的复现夹具写的是 `subCalls:[{callId:"k",...}]`，缺 `kind:"tool-result"`，于是 `subDetailOf` 走 running 分支、`resultText` 为空，导出里根本没有那一行——探针看起来"复现不了"。补上 `kind` 后立刻复现。**Codex 原始报告给的也是这个不完整形状**，所以它那条的复现路径其实和它描述的不完全一样；缺陷本身是真的。
+**7.** 我最初的复现夹具写的是 `subCalls:[{callId:"k",...}]`，缺 `kind:"tool-result"`，于是 `subDetailOf` 走 running 分支、`resultText` 为空，导出里根本没有那一行——探针看起来"复现不了"。补上 `kind` 后立刻复现。**Codex 原始报告给的也是这个不完整形状**，所以它那条的复现路径其实和它描述的不完全一样；缺陷本身是真的。
 
 #### 现状
 
@@ -6387,11 +6387,11 @@ Error: live running count: 2
 
 四轮 Codex 复核，每轮都找到了真问题（4 条 → 2 条 → 1 条 → 0 条）。这个递减序列本身比"一次通过"更有说服力——它说明前几轮的"绿"不是因为没有缺陷，而是因为没人从新角度去看。
 
-###13.25新一轮独立猎取：又找到4条静默丢失（2026-11-21）
+### 13.25新一轮独立猎取：又找到4条静默丢失（2026-11-21）
 
 用户问"还有其他问题吗"，我没回答"没有"，而是重新写了一组探针，针对**此前没测过**的输入形态。找到4条真缺陷 +2条待决策。
 
-####已修4条
+#### 已修4条
 
 | # |问题 |复现 |变异后守卫 |
 |---|---|---|---|
@@ -6402,22 +6402,22 @@ Error: live running count: 2
 
 **A是最严重的一条**：`cellId`对字符串 callId **完全忽略 ordinal**。§13.09曾把"两个同 callId的 cell共享 React key"记为残留意项，但那时以为它不可达——§13.09的②修复让 durable路径无条件 claim之后，它变成可达了。所以这是**我自己上游修复带来的暴露**，不是新 bug。
 
-####待决策2条（没动）
+#### 待决策2条（没动）
 
 - **B**：`reconstructMessages`遇到 `seq === null`的节点，会**越过 `beforeSeq`窗口头**（§13.12已记录）。`seq`为 null时位置未知，"放进这个请求的窗口"和"排除"都是猜测。需要定语义：宁可少显示，还是宁可显示可能属于未来的内容？
 - **D（S1）**：子调用失败**不**提升 step的错误状态。顶层成功、子调用失败的 step在时间线/KPI上仍显示成功。这是**产品定义问题**——KPI的"错误"是否包含嵌套调用。Codex也把它列为疑似而非缺陷。
 
-####过程失误
+#### 过程失误
 
 本轮我连续5次把 `> file2>&1`写成 `> file2>&1`，导致读错文件名、多次重跑。纯手误，但浪费了时间；教训是 shell重定向不要靠肌肉记忆。
 
-###13.26用真实数据决定 B / D要不要修（2026-11-21）
+### 13.26用真实数据决定 B / D要不要修（2026-11-21）
 
 用户说"根据实际使用情况来决定"。这可以做，不该拍脑袋。
 
 数据来源：`~/.dsh/sessions`，482个 zstd压缩会话文件，全部解压后用 Node逐条 JSON解析统计。
 
-####总量
+#### 总量
 
 ```
 会话文件482（全部可解压）
@@ -6441,22 +6441,22 @@ tool/result记录71,444
 全库 "runningCalls"出现次数0
 ```
 
-####决定：两条都不改
+#### 决定：两条都不改
 
 - **B**：真实数据0/151,977。它只会出现在**手改/损坏**的日志里，而当前行为（保留该节点）至少不是丢数据。改成"排除"反而会引入隐藏，净收益为负。
 - **D**：`subCalls`在持久化日志里**根本不存在**（唯一命中是源码文本）。`runningCalls`也从不落盘。于是我担心的"顶层成功、子调用失败的 step显示成功"这个谎言，在真实数据上**没有素材可撒**。为一个不存在的形态改 KPI口径，风险大于收益。
 
-####这两条的处置
+#### 这两条的处置
 
 不改代码，改为**记录实测依据**。这样将来如果 DSH真的开始持久化 `subCalls`，这份扫描脚本和基线数字可以直接复用来判断要不要跟进。
 
-####顺带得到的两个事实
+#### 顺带得到的两个事实
 
 1. **`runningCalls`从不落盘**——它只存在于实时快照里。所以 §13.15的 #10/§13.19的 P2c那些 runningCalls路径的修复，只在**流式进行中**有用，离线回放永远碰不到。
 2.真实日志里 `tool/result`有71,444条，**没有一条**带嵌套子调用。说明"子调用"这个 UI概念目前只能靠实时数据触发。
 
 
-###13.27命名口径统一（2026-11-21）
+### 13.27命名口径统一（2026-11-21）
 
 此前项目有**三套名字**并存：
 
@@ -6469,7 +6469,7 @@ tool/result记录71,444
 
 方向只能是**向 `-plus`靠**：去掉 `-plus`会与上游 `AFAP/dsh-trajectory-traceview`撞名，失去并存安装能力（`-plus`后缀正是4710cb7为并存而加的）。
 
-####实际执行
+#### 实际执行
 
 1. GitHub仓库改名 → `MisonL/dsh-trajectory-traceview-plus`（旧名由 GitHub自动重定向）
 2.本地目录 → `/Volumes/Work/code/dsh-trajectory-traceview-plus`
@@ -6478,7 +6478,7 @@ tool/result记录71,444
 5. `docs/DESIGN.md`4处硬编码旧路径改为新路径
 6. `~/.dsh/profiles/web`：`link:`依赖值与 `node_modules`软链一并重建
 
-####验证
+#### 验证
 
 从**新路径**重跑全部门禁，全部 exit0：
 
@@ -6492,28 +6492,28 @@ browser-check exit=0
 
 真宿主（新起的实例，读的是新路径的 `link:`）验证：插件正常挂载，**64站点 /零运行时错误** / KPI `2轮次58步骤57工具0错误26.4M请求 tokens`。
 
-####留档
+#### 留档
 
 `npm publish`时 npm曾会警告 `repository.url`与包名不符；现在两者一致，该警告消失。
 
 
-###13.28发布前最终四维度审查（2026-11-21）
+### 13.28发布前最终四维度审查（2026-11-21）
 
 用户要求最后一次全维度全场景审查，并让 Codex独立复看。我按四个维度各自建了独立探针。
 
-####维度1数据正确性：15/15通过
+#### 维度1数据正确性：15/15通过
 
 锚点文法往返可逆、锚点唯一、station id唯一、cell id唯一、同文两段都保留、
 KPI usage三种来源口径一致（只有node/只有request/两者都有）、
 导出含全部站点种类（用户/助手/错误/重试/压缩/孤儿）、分页 prepend后新站 id保留。
 
-####维度2崩溃与坏输入：20组全过
+#### 维度2崩溃与坏输入：20组全过
 
 覆盖 Symbol / BigInt / NaN / Infinity /循环引用 /函数 /60层深嵌套 /1MB文本 /
 blocks是字符串 /字段是对象 /callId是对象 /subCalls循环 /全字段都怪。
 **0崩溃**，且导出与单步导出在这些输入下都不抛。
 
-####维度3真宿主交互：全部正常
+#### 维度3真宿主交互：全部正常
 
 |场景 |实测 |
 |---|---|
@@ -6531,14 +6531,14 @@ blocks是字符串 /字段是对象 /callId是对象 /subCalls循环 /全字段�
 
 响应式：1440/1024/900/768/720/600/390七档，**均无横向溢出**，无未被裁剪的超宽元素。
 
-####维度4发布卫生：31/31通过
+#### 维度4发布卫生：31/31通过
 
 files白名单覆盖全部必需文件且真实存在；name与 repository.url一致；
 engines.dsh锁定；MIT；上游 AFAP署名保留；version出现在 CHANGELOG；
 README宣称的12项功能在源码中都有实现。（该项第一次报"原始请求未实现"是**我的探针漏拼了
 00-locale.js**，补上后通过——探针自身的假阴性。）
 
-####修的两条
+#### 修的两条
 
 **① a11y：面板缺少 landmark**
 
@@ -6562,7 +6562,7 @@ ratio3.01（阈值3）失败一次；空载复跑5/5通过，比率2.02。
 任一轮达标即通过——真 O(n²)是确定性的，两轮都会红。
 控制流已验证（临时把阈值降到1，报错文案为 "in BOTH rounds"）。
 
-####过程中的失误
+#### 过程中的失误
 
 -我的 Python补丁第一次**静默没生效**（三处替换全没匹配上），但断言只查了 `className`数量，
 所以打印了"已加"。第二次改用逐行插入并断言插入数=3才真正落地。
@@ -6570,11 +6570,11 @@ ratio3.01（阈值3）失败一次；空载复跑5/5通过，比率2.02。
 我没先 `build-client`。**变异前必须重建**，否则测的是旧产物。
 
 
-###13.29 Codex独立审查找到的3条真缺陷（2026-11-21）
+### 13.29 Codex独立审查找到的3条真缺陷（2026-11-21）
 
 独立审查（四个维度）在本轮又找到3条**确认可复现**的缺陷，全部已修 +变异守卫。
 
-####F1【P2】`requests[].step`是 Symbol →整个投影抛异常
+#### F1【P2】`requests[].step`是 Symbol →整个投影抛异常
 
 ```
 TypeError: Cannot convert a Symbol value to a string
@@ -6589,7 +6589,7 @@ TypeError: Cannot convert a Symbol value to a string
 
 变异（忠实回滚整段，含提前返回）：干净翻红，报 `Cannot convert a Symbol value to a string`。
 
-####F5【P2】partial（流式）分支丢弃未知 block kind
+#### F5【P2】partial（流式）分支丢弃未知 block kind
 
 durable分支我这轮已改成 `[未知内容] · <kind>`，**streaming分支没同步**：
 
@@ -6605,7 +6605,7 @@ partial blocks [{"kind":"future"},{"kind":"file"}] → cells []
 >这类"改了一处、漏了同构的另一处"在本项目已出现多次（§13.25的C、§13.29的F5）。
 >经验：修一个分支时，**先 grep出所有同构分支**。
 
-####F3【P3】非对象请求行被静默丢弃
+#### F3【P3】非对象请求行被静默丢弃
 
 `safeList`在设计上就过滤非对象（其他调用点需要对象），于是 `requests:[null]`、
 `requests:["x"]`直接消失，**既没显示也没计入 unplaced**，日志看起来是完整的。
@@ -6615,7 +6615,7 @@ nodes侧有 `nodeStats.invalid`会报，requests侧不对称。
 
 变异：`CODEXF a null request row was not counted:0`
 
-####未采纳的两条
+#### 未采纳的两条
 
 - **F4**：`tvp1:cfoo#bar`被解析成 `callId="foo"` + `hint="bar"`。这是**文法设计**：
 `#`是"提示后缀"分隔符（`tvp1:e123#说明`）。callId含`#`属文法不支持的形状，
@@ -6626,7 +6626,7 @@ nodes侧有 `nodeStats.invalid`会报，requests侧不对称。
 （它本来就是一个孤立结果卡片），不改。
 
 
-###13.30我在修 F5时又引入一条回归，被下一篇复核抓住（2026-11-22）
+### 13.30我在修 F5时又引入一条回归，被下一篇复核抓住（2026-11-22）
 
 §13.29的 F5（partial未知块命名）修完后，我另起一个**聚焦**的复核worker（上一个
 因为上下文烧到91%崩了）。它只看 `git show6287f2f`，一眼指出：
@@ -6660,7 +6660,7 @@ running+partial同调用 → [{"kind":"tool","name":"read"}] ←不再有假卡
 出现两次，直接 replace会误伤 durable分支），用 `pu${`单元格定位回找：
 `CODEXF the streaming tool call did not become a tool cell: [...block.unknown · tool-call]`
 
-####这是同一个错误模式的第三次
+#### 这是同一个错误模式的第三次
 
 |次数 |场景 |漏了什么 |
 |---|---|---|
@@ -6672,9 +6672,9 @@ running+partial同调用 → [{"kind":"tool","name":"read"}] ←不再有假卡
 **改一个 `else if`链，必须把整条链的分支和顺序一起看**。
 
 
-###13.31最终四维度审查的结论（2026-11-22）
+### 13.31最终四维度审查的结论（2026-11-22）
 
-####我这边的四个维度
+#### 我这边的四个维度
 
 |维度 |方法 |结果 |
 |---|---|---|
@@ -6684,7 +6684,7 @@ running+partial同调用 → [{"kind":"tool","name":"read"}] ←不再有假卡
 |3b响应式 |1440/1024/900/768/720/600/390七档 |无横向溢出 |
 |4发布卫生 |files白名单/元数据一致/上游署名/CHANGELOG/README宣称的12项功能 |31/31 |
 
-####Codex独立审查（两个worker，第一个因上下文耗尽崩溃）
+#### Codex独立审查（两个worker，第一个因上下文耗尽崩溃）
 
 它找到并被我确认修复的：
 - **F1** `requests[].step`是 Symbol →抛异常（`${turn}:${step}`模板）
@@ -6696,7 +6696,7 @@ running+partial同调用 → [{"kind":"tool","name":"read"}] ←不再有假卡
 它判"可发布"（限指定范围）。它对 F4（`#`作为 hint分隔符属文法边界，且无路径生成
 `c<callId>`锚点）与 F5孤儿站设计两条"不修"决定**均表同意**。
 
-####诚实标注未覆盖的部分
+#### 诚实标注未覆盖的部分
 
 -真实宿主上的**剪贴板读取**无法在自动化环境验证（权限弹窗）；我用打桩验证了写入内容，
 读取回填只能靠人工点击确认。
@@ -6705,15 +6705,15 @@ running+partial同调用 → [{"kind":"tool","name":"read"}] ←不再有假卡
 -深色主题下的对比度未做全量扫描（axe因背景合成报 incomplete，非违规）。
 -`npm publish`未执行；发布包内容用 files白名单静态核对，未做真实 `npm pack`后安装验证。
 
-####结论
+#### 结论
 
 **在当前可验证的范围内，没有已知的、在真实数据上可达的缺陷。**剩余风险集中在
 "sighted/SR/触摸"这类需要人工确认的交互，以及发布包的实机安装。
 
 
-###13.32首发 npm 发布：0.10.0（2026-11-22）
+### 13.32首发 npm 发布：0.10.0（2026-11-22）
 
-####发布前的实测记录
+#### 发布前的实测记录
 
 |检查 |结果 |
 |---|---|
@@ -6728,14 +6728,14 @@ running+partial同调用 → [{"kind":"tool","name":"read"}] ←不再有假卡
 |夹带检查 |无 `test/`、无 `node_modules`、无 `.tgz` |
 |tarball 装入干净消费者目录 |成功；`lib/client.js` 325,936 字节且含 `__ModuleLoader__` |
 
-####版本号与标签
+#### 版本号与标签
 
 `0.9.29 → 0.10.0`。按 README §14 的号段规则，这次含新增能力（以及一批崩溃/数据正确性修复），
 取 **minor**。
 
 GitHub 侧同步：`main` 推到 `e256009`，tag `v0.10.0` 已推送（`refs/tags/v0.10.0`）。
 
-####发布
+#### 发布
 
 ```
 npm publish → + dsh-trajectory-traceview-plus@0.10.0
@@ -6743,7 +6743,7 @@ package size 931.8 kB / unpacked 1.7 MB / 22 files
 shasum fabb2edf7783828f29923b01b1e1eafe8c1bac68
 ```
 
-####发布后验证
+#### 发布后验证
 
 `npm view ... version` 立刻返回 `0.10.0`，但**从 registry 安装有传播延迟**：
 连续 6 次 `npm install`（每次间隔 15s）都报 `notarget`，第 7 次加 `--prefer-online`
@@ -6758,7 +6758,7 @@ client.js 325,936 字节 | 经典脚本: true
 cordis.patch.yml / CHANGELOG.md / LICENSE / README.md / src/30-helpers.js / docs/PROVENANCE.md 全部存在
 ```
 
-####一个过程教训
+#### 一个过程教训
 
 发布后第一次安装验证连续失败 6 次，我差点把它当成"发布包有问题"。实际是 **npm registry 的
 缓存/传播延迟**：`npm view` 走的是一个路径，`npm install` 的解析走另一个（本地缓存优先）。
@@ -6767,12 +6767,12 @@ cordis.patch.yml / CHANGELOG.md / LICENSE / README.md / src/30-helpers.js / docs
 **教训：`npm view` 能看到 ≠ `npm install` 能装到。**两者要分别验证。
 
 
-###13.33真机安装验证：registry 包能被 DSH 装进独立 profile（2026-11-22）
+### 13.33真机安装验证：registry 包能被 DSH 装进独立 profile（2026-11-22）
 
 §13.32 只证明了「从 registry 能 `npm install` 进一个空目录」。那不是 DSH 的安装路径。
 这一步补上真正的验证：让 `dsh plugin` 把**发布包**装进一个独立 profile。
 
-####做法
+#### 做法
 
 不动用户现有的 web profile（那里是 `link:` 指向本仓库的开发态）。新建临时 profile：
 
@@ -6782,7 +6782,7 @@ dsh plugin --profile releasecheck add --save-exact dsh-trajectory-traceview-plus
 
 `dsh plugin add` 是转发给 pnpm 的，所以语法以 `--help` 为准，不靠猜。
 
-####结果
+#### 结果
 
 |检查 |结果 |
 |---|---|
@@ -6795,7 +6795,7 @@ dsh plugin --profile releasecheck add --save-exact dsh-trajectory-traceview-plus
 |`dsh plugin --profile releasecheck list` |列出该插件 |
 |`dsh --profile releasecheck --dump-config` |生成**启用的** `dsh-trajectory-traceview-plus` 行 |
 
-####清理（我逐条复核过，不是只听报告）
+#### 清理（我逐条复核过，不是只听报告）
 
 |断言 |复核结果 |
 |---|---|
@@ -6806,7 +6806,7 @@ dsh plugin --profile releasecheck add --save-exact dsh-trajectory-traceview-plus
 |仓库未被改 |工作区 0、HEAD 仍是 a147246 |
 |registry 真实可达 |`npm view --prefer-online` → `0.10.0` |
 
-####这一步补上了什么
+#### 这一步补上了什么
 
 之前所有验证都在"源码态 + 浏览器 harness"里完成。这一条第一次回答：
 **一个普通用户 `dsh plugin add` 这个包名，能不能真的装上、能不能被 loader 认成有效插件行。**
@@ -6817,14 +6817,14 @@ dsh plugin --profile releasecheck add --save-exact dsh-trajectory-traceview-plus
 同一份 `lib/client.js`（325,936 字节，与发布包逐字节相同）上验过 13 项行为。
 
 
-###13.34补上 CI，并用一次故意的红灯验证它真的会红（2026-11-22）
+### 13.34补上 CI，并用一次故意的红灯验证它真的会红（2026-11-22）
 
 此前整个仓库**没有任何 CI**（`gh run list` 空、`actions/runs total_count=0`）。
 README §14 自己写着「版本号与 tag 不一致 → 暂无自动检查，人工确认」——
 这类失败是静默的：`npm publish` 不要求 tag 存在，tag 也可以指向一个
 `package.json` 仍是旧版本的提交。
 
-####加了什么
+#### 加了什么
 
 |文件 |作用 |
 |---|---|
@@ -6839,7 +6839,7 @@ workflow 里显式 `npm ci --include=dev`，注释写清原因：
 这台机器 `NODE_ENV=production`，`npm ci` 会因此跳过 devDependencies，
 而 smoke 需要 react/react-dom 做 Markdown 静态渲染。
 
-####两处只有新克隆才暴露的问题
+#### 两处只有新克隆才暴露的问题
 
 我在本地跑全绿，push 后自己在 **fresh clone** 里按 CI 顺序复跑，才发现：
 
@@ -6854,7 +6854,7 @@ workflow 里显式 `npm ci --include=dev`，注释写清原因：
 
 修完后再在第二个 fresh clone 跑，五步全绿。
 
-####真实 CI 结果
+#### 真实 CI 结果
 
 ```
 push eec67b5 → GitHub Actions run 45026664312 → completed / success
@@ -6864,7 +6864,7 @@ provenance --check / version-check / smoke）全部 success
 
 workflow 在 GitHub 上状态 `active`。
 
-####红灯验证
+#### 红灯验证
 
 只证明"绿灯"不够——CI 也必须能被真实破坏。我建了 `ci-selftest` 分支，
 **故意只改 `src/00-locale.js` 而不重建 `lib/client.js`**（这是本项目最常见的
@@ -6883,7 +6883,7 @@ run 45029185542 → completed / failure
 删掉自测分支后复查：main=eec67b5、origin/main 同步、工作区干净、
 main 的 CI 仍是 success。
 
-####未做
+#### 未做
 
 - **tag 触发路径未单独验证**：workflow 声明了 `tags: ['v*']`，但为验证而强推 release tag
   不合适；下次正常打 tag 时自然验证。

@@ -67,6 +67,11 @@ jobs:
       - name: Doc cross-references resolve
         run: node scripts/doc-ref-check.mjs
 
+      # CommonMark needs a space after the `#` run. Without this, `###13.25` reads
+      # as a paragraph on GitHub and the section structure silently disappears.
+      - name: Doc headings render
+        run: node scripts/doc-heading-check.mjs
+
       - name: Smoke tests
         run: node test/smoke.test.cjs
 
