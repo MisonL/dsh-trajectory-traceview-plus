@@ -136,7 +136,7 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 从 npm 安装（推荐，**写死版本号**）：
 
 ```powershell
-dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.2
+dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.3
 ```
 
 > **为什么不用 `@latest`**：`dsh plugin` 底层是 pnpm，而 **pnpm 12 有供应链延迟保护**
@@ -157,10 +157,10 @@ dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.2
 从 GitHub 安装（**必须带 tag**）：
 
 ```powershell
-dsh plugin --profile web add "github:MisonL/dsh-trajectory-traceview-plus#v0.11.2"
+dsh plugin --profile web add "github:MisonL/dsh-trajectory-traceview-plus#v0.11.3"
 ```
 
-> **为什么必须带 `#v0.11.2`**：`github:` 规格不带 ref 时装的是**默认分支的 HEAD**，
+> **为什么必须带 `#v0.11.3`**：`github:` 规格不带 ref 时装的是**默认分支的 HEAD**，
 > 不是任何发布版本。而这个仓库在发版后还会继续提交（本轮 v0.11.0 之后就有 5 个
 > 文档/脚本提交），所以"不带 ref"装到的东西**明天可能是另一个样子**，而版本号
 > 仍写着 0.11.0。带 tag 才能让"装到的"和"发布过的"是同一份代码。
@@ -337,10 +337,10 @@ node scripts/provenance.mjs              # 4. 刷新来源清单（新增/改名
 npm run check                            # 5. 8 步门禁，全绿再往下
 git add -A; git commit -m "..."          # 6.
 git push origin main                     # 7.
-git tag -a v0.11.2 -m "..."              # 8.
-git push origin v0.11.2                  # 9.
+git tag -a v0.11.3 -m "..."              # 8.
+git push origin v0.11.3                  # 9.
 npm publish                              # 10. 触发 prepublishOnly → 再跑一遍 check
-gh release create v0.11.2 --notes-file … # 11. 徽章读的是 Release，不是 tag
+gh release create v0.11.3 --notes-file … # 11. 徽章读的是 Release，不是 tag
 
 node scripts/release-status.mjs          # 12. 四处对齐了吗？（tag / Release / npm 元数据 / tarball）
 ```

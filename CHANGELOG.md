@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.11.3 — 2026-11-24
+
+### Fixed
+
+- **搜索框里的 `↑` / `↓` 导航原来根本不存在。** README §7 的快捷键表从存在起就写着这一行，而两条处理路径都跳过了它：面板级处理器遇到 `input` 目标直接 `return`，搜索框级处理器只认 `Enter` / `Escape`。于是浏览器查找最自然的两个键按下去毫无反应。现在补上（复用「下一个 / 上一个命中」按钮本来就调用的 `gotoMatch`，行为含环形回绕一致）。
+- **README §10 的安全声明失准。** 原文写「不写入任何存储」，实际每个会话会往 `sessionStorage` 写一条 `dstv:view:1:<会话键>` = `{ revealed, query }`，用于宿主重新挂载面板时不把你打回「总览 + 空搜索框」。现已逐条写明：键名、内容、只在本标签页、为空时删除、存储被禁用时不抛错，并明确提示**搜索框里的文字会留在本标签页的 sessionStorage 里**。
+
+### Added
+
+- **README §7 的每个键现在都有断言**（浏览器探针 13 → 15 组 / 47 → 69 条）：空格播放+暂停、PageUp/PageDown 单调前进且可回退、`/` 与 `f` 都聚焦搜索框、`r` 双向切换且只在有请求的站点生效、`↑`/`↓` 计数器必须变化、`Enter` / `Shift+Enter` 方向相反、`Esc` 清空。
+- **新门禁 `shortcut-check`**（CI 9 项 / 本地 8 步）：README §7 每一行列出的键都必须在 `probe.js` 里出现。单向——探针测表外的键不算错。带反向自检：一个都没匹配上直接红，防止映射表失效后门禁永远绿。
+- **探针新增 `storage` 组**：至多一条视图状态键、字段只能是 `revealed` / `query`、`query` ≤200 字符、`localStorage` 仍为空。
+- **smoke 新增 `SEC1` / `SEC2`**：`src/` 不得出现 `document.cookie =`、`localStorage` 写、`IndexedDB`、`sendBeacon`、`fetch(`、`XMLHttpRequest`、`WebSocket`；同时 `sessionStorage.setItem` 必须仍存在（否则说明功能被删而文档没改）。
+
+### Changed
+
+- `readme-numbers` 现在也核对**安装命令里写死的版本号**是否等于 `package.json`——改版本忘改 README 会直接红。
+- `release-status` 的 npm 行拆成两个事实（元数据 + tarball 可下载），并新增第 5 行 `npm @latest`（advisory）：`@latest` 被 pnpm 的供应链延迟挡住时打印「published X h ago, clears in ~Y h」而不是含糊的「self-heals」。
+- 新增 `scripts/guard-check.mjs`：用已知复杂度的输入验证 P1 性能守卫还能不能分辨线性/二次。
+
+### Notes
+
+0.11.0 / 0.11.1 / 0.11.2 的 `lib/` 逐字节相同；**0.11.3 是这三个版本之后第一次真正的运行时代码变更**（`↑`/`↓` 搜索导航）。
+
 ## 0.11.2 — 2026-11-24
 
 `release-status` 增加第 4 个外部环节的检查：**tarball 是否真的可下载**。
