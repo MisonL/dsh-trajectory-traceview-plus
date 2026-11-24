@@ -780,7 +780,11 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		const zhS = src.indexOf("const zh = {");
 		const enS = src.indexOf("const en = {");
 		if (zhS < 0 || enS < 0) throw new Error("I18N locale tables not found");
-		const grab = (block) => new Set([...block.matchAll(/^\s+"([\w.]+)":/gm)].map((m) => m[1]));
+		// NOT anchored to the start of the line. The table packs several short keys onto
+		// one line (`"note.wrapL": "『", "note.wrapM": "（", "note.wrapR": "）』"`), and a
+		// `^\s+` anchor cannot see anything after the first one — so those keys were
+		// invisible to this guard. Deleting `note.wrapM` from BOTH tables used to pass.
+		const grab = (block) => new Set([...block.matchAll(/"([\w.]+)"\s*:/g)].map((m) => m[1]));
 		const zhKeys = grab(src.slice(zhS, enS));
 		// Bound the English side the same way as the Chinese one. `enS + 20000` ran past
 		// the end of the table (8,754 chars) into unrelated code: any `"a.b":` literal
@@ -788,7 +792,11 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		const enEndMark = src.indexOf("\n\t\t};", enS);
 		if (enEndMark < 0) throw new Error("I18N2 could not find the end of the English table");
 		const enKeys = grab(src.slice(enS, enEndMark));
-		const used = new Set([...src.matchAll(/\bt\("([\w.]+)"\)/g)].map((m) => m[1]));
+		// `cpt` is the local alias used inside the projection helpers (`const cpt = typeof tr
+		// === "function" ? tr : (k) => k`). Checking only `t(` meant every key that path
+		// asked for — note.wrapL / note.wrapM / note.wrapR / note.compaction … — was never
+		// verified to exist, which is exactly the failure mode this block is here to catch.
+		const used = new Set([...src.matchAll(/\b(?:t|cpt|tr)\(\s*"([\w.]+)"/g)].map((m) => m[1]));
 		const missZh = [...used].filter((k) => !zhKeys.has(k));
 		const missEn = [...used].filter((k) => !enKeys.has(k));
 		if (missZh.length > 0) throw new Error("I18N keys missing from zh: " + missZh.join(", "));

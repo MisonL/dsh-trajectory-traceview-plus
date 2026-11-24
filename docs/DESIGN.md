@@ -7173,3 +7173,74 @@ Windows 下补 `.cmd` / `.exe` 后缀。找不到就返回 null，保持原有�
    不能当成本地小工具。
 3. 「降级」和「失败」要能区分。这里降级是合理的（没装 DSH 也该能生成页面），
    但必须**说出来**，否则读者无法判断自己的结果是不是用假数据得出的。
+
+
+### 13.39 i18n 守卫看不见同一行的第二个键（2026-11-24）
+
+#### 怎么发现的
+
+复查字典时我注意到 `note.wrapL` / `note.wrapM` / `note.wrapR` 三个键**写在同一行**：
+
+```js
+"note.wrapL": "『", "note.wrapM": "（", "note.wrapR": "）』",
+```
+
+而 smoke 里的 i18n 守卫用这条正则取键：
+
+```js
+const grab = (block) => new Set([...block.matchAll(/^\s+"([\w.]+)":/gm)].map((m) => m[1]));
+//                                     ^^^ 锁定行首
+```
+
+`^\s+` 只能命中**每行第一个**键。同一行后面的键对它完全隐形。
+
+#### 实测：这个守卫当时是漏的
+
+从 zh 和 en 两份表里同时删掉 `note.wrapM`，然后跑 smoke：
+
+```
+$ node test/smoke.test.cjs
+TV PLUGIN SMOKE TEST (v5) OK
+```
+
+**绿。** 而 `note.wrapM` 是真在用的（`cpt("note.wrapM")` 拼压缩记录的括号）。
+也就是说：删掉一个正在使用的翻译键，守卫放行，线上会显示原始 dotted id。
+
+#### 还有第二层漏
+
+同一个守卫收集"被引用的键"时只认 `t("…")`：
+
+```js
+const used = new Set([...src.matchAll(/\bt\("([\w.]+)"\)/g)].map((m) => m[1]));
+```
+
+但投影层用的是本地别名 `cpt`（`const cpt = typeof tr === "function" ? tr : (k) => k`）。
+`note.wrapL` / `note.wrapM` / `note.wrapR` / `note.compaction` / `note.compacted` /
+`note.replace` / `note.items` / `note.about` **全部只经 `cpt` 引用**，从未进入 `used`。
+
+两处漏洞叠加的效果：这一族键既不在"被引用"集合里，也可能不在"已定义"集合里，
+守卫两头都看不见。
+
+#### 修法
+
+```js
+const grab = (block) => new Set([...block.matchAll(/"([\w.]+)"\s*:/g)].map((m) => m[1]));   // 不再锚行首
+const used = new Set([...src.matchAll(/\b(?:t|cpt|tr)\(\s*"([\w.]+)"/g)].map((m) => m[1])); // 三个取值函数都算
+```
+
+#### 验证（三个变异，全部从绿变红）
+
+| 变异 | 修复前 | 修复后 |
+|---|---|---|
+| 两份表都删 `note.wrapM`（同行第二键，cpt 引用） | **绿（漏）** | `I18N keys missing from zh: note.wrapM` |
+| 只删 en 侧 `note.compaction`（cpt 专用键） | 绿（漏） | `I18N keys missing from en: note.compaction` |
+| 两份表都删 `note.wrapR`（同行末键，cpt 引用） | 绿（漏） | `I18N keys missing from zh: note.wrapR` |
+
+#### 教训
+
+1. **正则锚点是最容易写错的守卫**。`^\s+` 看着很自然（"缩进后的键"），但它假设
+   一行只有一个键；一旦有人为了排版把短键并排放，守卫就静默失明。
+2. **同一个用途有多个入口时，守卫要把入口收全**。`t` 和 `cpt` 是同一个翻译函数的
+   两个名字，只盯一个等于只守了一半。
+3. 这两处漏洞都不是"功能坏了"，是**守卫自己坏了**。它一直绿着，所以没人查它——
+   这正是 §13.35「检查对象本身是错的」的同一个病，只是这次坏在正则上。
