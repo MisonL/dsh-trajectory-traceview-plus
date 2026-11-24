@@ -38,12 +38,35 @@ const probe = read('test/browser/probe.js');
 const observedGroups = new Set([...probe.matchAll(/info\.([a-zA-Z]\w*)\s*=/g)].map((m) => m[1]));
 const assertions = [...probe.matchAll(/\bfail\(/g)].length;
 
-const truth = { ciGates, localSteps, groups: observedGroups.size, assertions };
+// ── checks added OUTSIDE probe.js ────────────────────────────────────────────
+//
+// The counts above read probe.js only, so they were blind to everything
+// scripts/browser-check.mjs adds itself: `parsed.info.narrow` (a group) and two
+// `parsed.failures.push(...)` calls (assertions) in the `--shots` 375px probe.
+// The script therefore printed "14 observation groups" in that mode while both
+// READMEs said 13, and the gate stayed green — the same one-source-vs-two-sources
+// blindness as §13.44, one file over.
+//
+// Both extra counts are gated, and the READMEs state them on the `--shots` line.
+const browserCheck = read('scripts/browser-check.mjs');
+const extraGroupNames = new Set(
+	[...browserCheck.matchAll(/(?:parsed\.)?info\.([a-zA-Z]\w*)\s*=/g)]
+		.map((m) => m[1])
+		.filter((n) => !observedGroups.has(n)),
+);
+const extraAssertions = [...browserCheck.matchAll(/(?:parsed\.)?failures\.push\(/g)].length;
+
+const truth = {
+	ciGates, localSteps, groups: observedGroups.size, assertions,
+	extraGroups: extraGroupNames.size, extraAssertions,
+};
 
 if (process.argv.includes('--print')) {
 	console.log('CI 门禁 ' + ciGates + ' 项（workflow 具名步骤 ' + namedSteps.length + ' − Install）');
 	console.log('npm run check ' + localSteps + ' 步');
 	console.log('probe.js 观测组 ' + truth.groups + ' 个 / 断言 ' + assertions + ' 条');
+	console.log('browser-check 额外 ' + truth.extraGroups + ' 组 / ' + truth.extraAssertions + ' 条断言'
+		+ (extraGroupNames.size > 0 ? '（组：' + [...extraGroupNames].join(', ') + '）' : ''));
 	process.exit(0);
 }
 
@@ -54,7 +77,7 @@ if (process.argv.includes('--print')) {
 // it looked for `N 项` — the audit was wrong, not the document. Anchoring on the
 // sentence is what made it correct.
 const problems = [];
-const counted = { ciGates: 0, localSteps: 0, groups: 0, assertions: 0 };
+const counted = { ciGates: 0, localSteps: 0, groups: 0, assertions: 0, extraGroups: 0, extraAssertions: 0 };
 
 const claim = (file, lineNo, kind, found, want) => {
 	counted[kind] += 1;
@@ -67,24 +90,45 @@ for (const file of ['README.md', 'README.en.md']) {
 	read(file).split('\n').forEach((line, i) => {
 		const at = i + 1;
 
+		// ── specific claims first, generic ones afterwards ────────────────────
+		//
+		// The `--shots` line says "另加 1 组 / 2 条断言（375px …，共 14 组）". The
+		// generic `(\d+) 条断言 -> 47` rule happily matched that "2" and reported
+		// `assertions says 2, actual 47` — the gate was wrong, not the document
+		// (§13.37, §13.44). So: a specific rule claims a span of the line, and the
+		// generic rules skip any match that starts inside a claimed span. Order and
+		// precedence are explicit instead of accidental.
+		const claimedSpans = [];
+		const claimSpan = (m, kind, found, want) => {
+			claimedSpans.push([m.index, m.index + m[0].length]);
+			claim(file, at, kind, found, want);
+		};
+		const isClaimed = (idx) => claimedSpans.some(([s, e]) => idx >= s && idx < e);
+
+		for (const m of line.matchAll(/--shots[^\n]{0,80}?另加\s*(\d+)\s*组/g)) claimSpan(m, 'extraGroups', Number(m[1]), truth.extraGroups);
+		for (const m of line.matchAll(/--shots[^\n]{0,80}?另加\s*\d+\s*组\s*\/\s*(\d+)\s*条/g)) claimSpan(m, 'extraAssertions', Number(m[1]), truth.extraAssertions);
+		for (const m of line.matchAll(/--shots[^\n]{0,60}?(?:adds?|plus)\s*(\d+)\s*(?:more\s*)?group/g)) claimSpan(m, 'extraGroups', Number(m[1]), truth.extraGroups);
+		for (const m of line.matchAll(/--shots[^\n]{0,60}?adds?\s*\d+\s*more\s*group\s*\/\s*(\d+)\s*assertions?/g)) claimSpan(m, 'extraAssertions', Number(m[1]), truth.extraAssertions);
+
 		// "CI：7 项门禁" / "the seven gates" / "门禁本身是 7 项" / "those 7 gates"
-		for (const m of line.matchAll(/(\d+)\s*项门禁/g)) claim(file, at, 'ciGates', Number(m[1]), ciGates);
-		for (const m of line.matchAll(/(\d+)\s*gates\b/g)) claim(file, at, 'ciGates', Number(m[1]), ciGates);
-		for (const m of line.matchAll(/门禁(?:本身)?是\s*(\d+)\s*项/g)) claim(file, at, 'ciGates', Number(m[1]), ciGates);
+		for (const m of line.matchAll(/(\d+)\s*项门禁/g)) if (!isClaimed(m.index)) claim(file, at, 'ciGates', Number(m[1]), ciGates);
+		for (const m of line.matchAll(/(\d+)\s*gates\b/g)) if (!isClaimed(m.index)) claim(file, at, 'ciGates', Number(m[1]), ciGates);
+		for (const m of line.matchAll(/门禁(?:本身)?是\s*(\d+)\s*项/g)) if (!isClaimed(m.index)) claim(file, at, 'ciGates', Number(m[1]), ciGates);
 
 		// "其中 6 步" / "6 of them"
 		for (const m of line.matchAll(/(\d+)\s*步/g)) {
+			if (isClaimed(m.index)) continue;
 			// "7 项门禁（…）" style lines also contain 步 sometimes; require the verb nearby.
 			if (!/跑|runs?|其中|of them/.test(line)) continue;
 			claim(file, at, 'localSteps', Number(m[1]), localSteps);
 		}
-		for (const m of line.matchAll(/(\d+)\s*of them/g)) claim(file, at, 'localSteps', Number(m[1]), localSteps);
+		for (const m of line.matchAll(/(\d+)\s*of them/g)) if (!isClaimed(m.index)) claim(file, at, 'localSteps', Number(m[1]), localSteps);
 
 		// "跑 47 条断言 / 记录 13 组观测" and its English twin
-		for (const m of line.matchAll(/(\d+)\s*条断言/g)) claim(file, at, 'assertions', Number(m[1]), assertions);
-		for (const m of line.matchAll(/(\d+)\s*assertions?/g)) claim(file, at, 'assertions', Number(m[1]), assertions);
-		for (const m of line.matchAll(/(\d+)\s*组观测/g)) claim(file, at, 'groups', Number(m[1]), truth.groups);
-		for (const m of line.matchAll(/(\d+)\s*recorded groups/g)) claim(file, at, 'groups', Number(m[1]), truth.groups);
+		for (const m of line.matchAll(/(\d+)\s*条断言/g)) if (!isClaimed(m.index)) claim(file, at, 'assertions', Number(m[1]), assertions);
+		for (const m of line.matchAll(/(\d+)\s*assertions?/g)) if (!isClaimed(m.index)) claim(file, at, 'assertions', Number(m[1]), assertions);
+		for (const m of line.matchAll(/(\d+)\s*组观测/g)) if (!isClaimed(m.index)) claim(file, at, 'groups', Number(m[1]), truth.groups);
+		for (const m of line.matchAll(/(\d+)\s*recorded groups/g)) if (!isClaimed(m.index)) claim(file, at, 'groups', Number(m[1]), truth.groups);
 	});
 }
 

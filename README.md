@@ -257,7 +257,7 @@ npm test                   # 只跑 smoke
 
 ```powershell
 node scripts/browser-check.mjs          # 起 harness，跑 47 条断言 / 记录 13 组观测
-node scripts/browser-check.mjs --shots  # 另外存 375px 截图
+node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 2 条断言（375px 溢出，共 14 组）
 ```
 
 它需要 `agent-browser`（Chrome via CDP）。**故意不进 CI**：把浏览器塞进 runner 的

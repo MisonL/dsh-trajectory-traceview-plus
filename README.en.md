@@ -246,7 +246,7 @@ The tests run the helper region against mock snapshots covering: tree building /
 
 ```powershell
 node scripts/browser-check.mjs          # builds the harness; 47 assertions over 13 recorded groups
-node scripts/browser-check.mjs --shots  # also captures a 375px screenshot
+node scripts/browser-check.mjs --shots  # saves screenshots and adds 1 more group / 2 assertions: 375px overflow (14 total)
 ```
 
 It needs `agent-browser` (Chrome via CDP). **Deliberately not in CI**: adding a browser to the runner is more moving parts than the check is worth, and a flaky browser job trains people to ignore red builds. Run it locally before releasing.

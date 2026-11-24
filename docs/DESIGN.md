@@ -7961,3 +7961,96 @@ dump-config: 0 条 skip，插件行存在
    不说，于是表现成"发布没成功"。**安全默认值 + 无提示 = 一个看起来像 bug 的正确行为。**
 3. 文档里的安装命令要**可验证**。我上一轮写 `@latest` 时没在干净环境跑过；
    这一轮跑一下就露了。凡是"用户会照抄"的命令，必须自己先照抄一遍。
+
+
+### 13.50 「数出来」的真相源也只读了一个文件（2026-11-24）
+
+#### 现象
+
+`readme-numbers` 上线后一直在核对「13 组观测 / 47 条断言」。跑一次带 `--shots` 的
+`browser-check`：
+
+```
+browser-check: PASS (14 observation groups recorded, 0 failures)
+```
+
+**14 组，而 README 一直写 13，门禁全绿。**
+
+#### 根因：同一个坑，隔了一个文件
+
+`readme-numbers` 从 `test/browser/probe.js` 数 `info.X =` 得到 13 组、数 `fail(`
+得到 47 条。而 `scripts/browser-check.mjs` **自己也会加一组**：
+
+```js
+parsed.info.narrow = n;                                  // ← 第 14 组
+if (n.overflow) parsed.failures.push("at 375px …");      // ← 第 48、49 条断言
+```
+
+只在 `--shots` 模式生效。所以：
+
+| 模式 | 真实观测组 | 真实断言 | README 说 |
+|---|---|---|---|
+| 默认 | 13 | 47 | 13 / 47 ✓ |
+| `--shots` | **14** | **49** | 13 / 47 ✗ |
+
+默认模式下 README 是**对的**——这也是它一直没被发现的原因：门禁和文档在同一个
+模式下都正确，只在换模式时一起错。
+
+**这和 §13.44 是同一个病，只是隔了一个文件。** 那一轮我学到「数量对了清单可能
+错」；这一轮发现「数出来的数量本身可能只数了一半」。
+
+#### 修法：让真相源覆盖第二个文件
+
+`readme-numbers` 现在同时读 `scripts/browser-check.mjs`：
+
+- 它的 `(parsed.)?info.X =` 里，不在 probe.js 的那些 → `extraGroups`
+- 它的 `(parsed.)?failures.push(` → `extraAssertions`
+
+README 的 `--shots` 行改为：
+
+```
+node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 2 条断言（375px 溢出，共 14 组）
+```
+
+#### 修的时候又踩了一个自己的坑
+
+加完匹配后门禁立刻红：
+
+```
+✗ README.md:260 — assertions says 2, actual 47
+```
+
+原因：新句子里的「2 条断言」被**通用规则** `(\d+) 条断言 → 47` 抓到了。**门禁错，
+文档对**——和 §13.37、§13.44 一个味道，第三次了。
+
+修法不是把文档改得绕口，而是给规则**显式优先级**：具体规则（`--shots … 另加 N 组
+/ M 条`）先跑并**占位**它匹配到的字符区间，通用规则跳过落在已占位区间里的匹配。
+
+```js
+const claimedSpans = [];
+const claimSpan = (m, kind, found, want) => { claimedSpans.push([m.index, …]); claim(…); };
+const isClaimed = (idx) => claimedSpans.some(([s, e]) => idx >= s && idx < e);
+```
+
+这样以后再加任何「例外写法」都不会去改通用规则的正则——顺序即优先级。
+
+#### 变异验证
+
+| 变异 | 结果 |
+|---|---|
+| `--shots` 行「1 组」→「3 组」 | `extraGroups says 3, actual 1` |
+| `--shots` 行「2 条」→「5 条」 | `extraAssertions says 5, actual 2` |
+| 主断言「47」→「50」 | `assertions says 50, actual 47`（通用规则仍生效） |
+| 真给 browser-check 加一组 `info.probe2` | 两份 README 同时报 `extraGroups says 1, actual 2` |
+
+第三个变异很重要：加优先级不能把通用规则打瘸。**具体规则占位，通用规则自净。**
+
+#### 教训
+
+1. **「从代码里数出来」不等于「从全部代码里数出来」。** 上一轮我把手写数字换成了
+   自动统计，以为解决了腐化问题；实际上只是把错误从「人抄错」换成了「尺子量短了」。
+2. 正确性依赖**模式**时最危险：默认模式全对，切模式一起错。这类 bug 只有真的换
+   个模式跑一次才会露。
+3. 门禁报错时优先怀疑门禁。这已经是第三次（§13.37、§13.44、本节），而且三次都是
+   同一个形状：**具体写法被通用规则误伤**。这次终于把「规则优先级」变成了显式机制，
+   而不是每次都去改正则躲。
