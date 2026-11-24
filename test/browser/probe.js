@@ -421,5 +421,49 @@
 		if (!labelOk) fail("the panel region has no accessible name");
 	}
 
+	// 15) the ONE thing this plugin writes to storage (README §10 promises exactly
+	// this and nothing more). Nothing used to check it at all — the README said
+	// "nothing is written to storage", which was simply false, and no test could have
+	// caught the lie in either direction (§13.59). Assert the shape the doc now states:
+	// one sessionStorage key per conversation, { revealed, query }, tab-scoped, and
+	// deleted rather than blanked when empty.
+	{
+		const keys = () => {
+			const out = [];
+			for (let i = 0; i < window.sessionStorage.length; i += 1) {
+				const k = window.sessionStorage.key(i);
+				if (k !== null && k.indexOf("dstv:view:1:") === 0) out.push(k);
+			}
+			return out;
+		};
+		// The panel has been searched and navigated by now, so at most one key may exist.
+		const ks = keys();
+		if (ks.length > 1) fail("more than one view-state key was written: " + JSON.stringify(ks));
+		if (ks.length === 1) {
+			const raw = window.sessionStorage.getItem(ks[0]);
+			let parsed = null;
+			try { parsed = JSON.parse(raw); } catch { parsed = null; }
+			if (parsed === null || typeof parsed !== "object") fail("the view-state entry is not a JSON object: " + String(raw).slice(0, 60));
+			else {
+				const extra = Object.keys(parsed).filter((k) => k !== "revealed" && k !== "query");
+				if (extra.length > 0) fail("the view-state entry carries fields the README does not disclose: " + extra.join(", "));
+				if (!(parsed.revealed === null || Number.isSafeInteger(parsed.revealed))) fail("revealed is neither null nor an integer: " + JSON.stringify(parsed.revealed));
+				if (typeof parsed.query !== "string") fail("query is not a string: " + JSON.stringify(parsed.query));
+				else if (parsed.query.length > 200) fail("query exceeds the documented 200-char cap: " + parsed.query.length);
+			}
+			info.storage = ks[0] + " (" + String(window.sessionStorage.getItem(ks[0])).length + " bytes)";
+		} else {
+			info.storage = "none";
+		}
+		// localStorage must stay untouched — that half of the claim is absolute.
+		if (window.localStorage.length > 0) fail("localStorage was written (" + window.localStorage.length + " key(s)); the README says it never is");
+		// NOT checking cookies at runtime, on purpose. This harness runs from a `file://`
+		// URL, and there `document.cookie = "x"` is silently a no-op: measured, writing a
+		// cookie here leaves `document.cookie === ""`. An assertion "no cookie was set"
+		// would therefore pass no matter what the code did — a permanent false green, the
+		// §13.52 shape again. The claim is checked statically in the smoke test instead
+		// (no `document.cookie =` anywhere in src/), which is where it can actually fail.
+	}
+
 	return JSON.stringify({ failures, info });
 })()

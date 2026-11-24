@@ -238,8 +238,14 @@ dsh plugin --profile web add "G:\path\to\dsh-trajectory-traceview-plus"
 ## 10. 安全与合规
 
 - **只读**：只读取会话视图已生成的 `TrajectorySnapshot` 快照并渲染；不修改 DOM 业务结构、不修改 / 删除任何文件、无宿主路由、不访问网络。
-- **本地数据**：所有数据均在浏览器内处理；原始请求只在主动打开面板时才重建，不写入任何存储。
-- **无持久化**：不写 localStorage / cookie；卸载即无痕。
+- **本地数据**：所有数据均在浏览器内处理；原始请求只在主动打开面板时才重建，不会上传到任何地方。
+- **唯一的写入：`sessionStorage` 里两条视图状态**。为了在宿主重新挂载面板时不把你打回「总览 + 空搜索框」，每个会话存一条
+  `dstv:view:1:<会话键>`，内容是 `{ revealed, query }`——已展开到哪个位置（数字）和搜索框里的文字（≤200 字符）。
+  - **只在本标签页内**（sessionStorage 不是 localStorage）：不跨标签、不跨窗口，关闭标签页即消失。
+  - **删除即消失**：两项都为空时这条键会被**移除**，不留空壳。
+  - **存储被禁用也能用**：所有访问都在 `try/catch` 里，宿主禁用存储时行为与之前完全一致，不抛错。
+  - 注意：搜索框里的文字会被写进去，**如果你在搜索框里输入过敏感内容，它会留在本标签页的 sessionStorage 里**，直到关标签页或清空搜索。
+- **无持久化**：不写 localStorage / cookie / IndexedDB；没有服务端、没有埋点；卸载即无痕。
 
 ## 11. 开发与自测
 
@@ -264,7 +270,7 @@ npm test                   # 只跑 smoke
 **需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
 
 ```powershell
-node scripts/browser-check.mjs          # 起 harness，跑 62 条断言 / 记录 14 组观测
+node scripts/browser-check.mjs          # 起 harness，跑 69 条断言 / 记录 15 组观测
 node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 2 条断言（375px 溢出，共 14 组）
 ```
 

@@ -845,6 +845,37 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		}
 	}
 
+	// ── README §10 promises EXACTLY ONE kind of write. Hold it to that. ──────
+	//
+	// The section used to read "nothing is written to storage", which was simply
+	// false: the panel writes `{ revealed, query }` into sessionStorage so a host
+	// remount does not throw the reader back to the overview. Nobody noticed because
+	// nothing checked either direction — the doc could have claimed anything.
+	//
+	// Runtime checks in the browser probe cover localStorage and the entry's SHAPE,
+	// but cookies cannot be checked there at all: the harness runs from a `file://`
+	// URL, where `document.cookie = "x"` is silently a no-op (measured). An assertion
+	// "no cookie was set" would pass no matter what the code did, so the cookie half
+	// is enforced HERE, statically, where a violation is actually visible.
+	{
+		const banned = [
+			[/document\.cookie\s*=/, "document.cookie assignment"],
+			[/\blocalStorage\s*\.\s*(setItem|removeItem|clear)\b/, "localStorage write"],
+			[/\bindexedDB\b/, "IndexedDB"],
+			[/navigator\s*\.\s*sendBeacon\b/, "sendBeacon"],
+			[/\bfetch\s*\(/, "fetch()"],
+			[/\bXMLHttpRequest\b/, "XMLHttpRequest"],
+			[/\bnew\s+WebSocket\b/, "WebSocket"],
+		];
+		for (const [re, what] of banned) {
+			if (re.test(src)) throw new Error("SEC1 src/ contains " + what + " — README §10 promises no such access");
+		}
+		// And the one allowed write must still be sessionStorage, not localStorage.
+		if (!/sessionStorage\s*\.\s*setItem/.test(src)) {
+			throw new Error("SEC2 src/ no longer writes sessionStorage — either the feature was removed (update README §10) or it moved somewhere the doc does not describe");
+		}
+	}
+
 	// ── the pack must not be near-empty for non-step stations ────────────────
 	// Six station kinds keep their payload on the station (not in `cells`), so a
 	// cells-only pack silently produced a title with no evidence.

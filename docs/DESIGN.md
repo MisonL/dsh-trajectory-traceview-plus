@@ -8738,3 +8738,119 @@ const PROBE_NAME = {
    给了一个只会在映射表完好时工作的开关。
 3. **加门禁的成本要算进去。** 一个门禁真正的代价不是那 40 行代码，是它在 6 个地方
    留下的引用。这是我今天第 3 次因为新增文件/门禁而碰到数字不一致。
+
+
+### 13.59 README 说「不写入任何存储」，实际写了 sessionStorage（2026-11-24）
+
+#### 现象
+
+README §10 原文：
+
+> - **本地数据**：所有数据均在浏览器内处理；原始请求只在主动打开面板时才重建，**不写入任何存储**。
+> - **无持久化**：不写 localStorage / cookie；卸载即无痕。
+
+而 `src/40-view.js` 里有一段明确的写入：
+
+```js
+window.sessionStorage.setItem(key, JSON.stringify({ revealed: revealedOrNull, query: queryText }));
+```
+
+键是 `dstv:view:1:<会话键>`，值是「展开到哪一站」和「搜索框文字」。
+
+**文档说没有，代码在写。**
+
+#### 代码是对的，文档是错的
+
+这段写入是有意设计、且注释写得很清楚：
+
+- 宿主切换标签页时会 **unmount / remount** 面板（实测 root 数 0 → 1），不存就会把
+  读者打回「总览 + 空搜索框」。
+- 用 `sessionStorage` 而不是 `localStorage`：不跨标签、不跨窗口、关标签即消失。
+- 每次访问都在 `try/catch` 里：宿主禁用存储时行为与之前完全一致，不抛错。
+- 两项都为空时 `removeItem`，不留空壳。
+
+**所以修的是文档，不是代码。** 这和 §13.57 正好相反——那次是文档对、代码缺。
+
+两节的判据其实同一条：**看这个行为本身合不合理，不看谁先谁后。**
+
+#### 为什么这个错误比 §13.57 更严重
+
+§13.57 是「承诺了但没做」，用户少个功能，能用。
+
+本节是**安全声明失准**。§10 那一节的标题是「安全与合规」，其中一句话是可被
+审计、可被用户拿来判断能不能用的。而这条声称错得很具体：**搜索框里的文字会被
+写进 sessionStorage**——有人可能在里面输入过敏感内容。
+
+而且 §10 里有两句话自相矛盾：上一句说"不写入任何存储"，下一句说"不写 localStorage
+/cookie"。**后一句是对的，前一句把后一句的正确性掩盖了**：读者只记住"无持久化"。
+
+#### 修法
+
+改成逐条列清楚，包括那条容易被忽略的风险：
+
+```markdown
+- **唯一的写入：sessionStorage 里两条视图状态**…（键名、内容、作用域、删除、
+  存储被禁用时的行为）
+  - 注意：搜索框里的文字会被写进去，如果你在搜索框里输入过敏感内容，
+    它会留在本标签页的 sessionStorage 里，直到关标签页或清空搜索。
+- **无持久化**：不写 localStorage / cookie / IndexedDB；没有服务端、没有埋点。
+```
+
+`sessionStorage`、`localStorage`、`cookie`、`IndexedDB` 一起写出来，让读者不用
+（也无法）从一句话里推断其余。
+
+#### 加了两层守卫
+
+**运行时（浏览器探针第 15 组 `storage`）**：
+
+- 至多一条 `dstv:view:1:` 键
+- 值是 JSON 对象，字段**只能**有 `revealed` 和 `query`——多一个字段就报
+  `carries fields the README does not disclose`
+- `revealed` 是 null 或安全整数
+- `query` 是字符串且 ≤200 字符（文档写了这个上限）
+- `localStorage` 仍然为空
+
+**静态（smoke 的 `SEC1` / `SEC2`）**：`src/` 不得出现 `document.cookie =`、
+`localStorage.setItem/removeItem/clear`、`indexedDB`、`sendBeacon`、`fetch(`、
+`XMLHttpRequest`、`new WebSocket`；同时 `sessionStorage.setItem` 必须仍然存在
+（否则说明功能被删了而文档没改）。
+
+#### 写这条断言时又踩了一个假绿
+
+第一版把 cookie 检查也放进运行时：
+
+```js
+if (document.cookie !== "") fail("a cookie was set: " + document.cookie);
+```
+
+变异测试——往代码里加 `document.cookie = "t=1"`——**没红**。
+
+因为探针跑在 `file://` 下，那里给 `document.cookie` 赋值是**静默无效**的。实测：
+
+```
+✗ COOKIE-TEST after write: ""
+```
+
+**写完了还是空字符串。** 这条断言无论如何都会通过——§13.52 的形状，第五次。
+
+修法：把 cookie 那一半移到静态检查（源码里不能出现赋值语句），运行时只保留
+localStorage（那个在 `file://` 下是真的可用，变异 A 验证过会红）。并在探针里
+写清楚**为什么不在这里查 cookie**，否则下一个人会以为是漏了。
+
+#### 变异验证
+
+| 变异 | 层 | 结果 |
+|---|---|---|
+| 加 `document.cookie = "t=1"` | 静态 | `SEC1 src/ contains document.cookie assignment` |
+| `sessionStorage` → `localStorage` | 静态 | `SEC1 src/ contains localStorage write` |
+| 同上 | 运行时 | `localStorage was written (1 key(s))` |
+| 写入额外字段 `secret` | 运行时 | `carries fields the README does not disclose: secret` |
+
+#### 教训
+
+1. **安全声明里不要出现"任何"这种词。** "不写入任何存储"读起来最有说服力，也最
+   容易变成谎话。列清单比下断言安全。
+2. 同一段里两句互相掩护时，读者只会记住更强的那句。§10 的"不写 localStorage
+   /cookie"是真的，它让上面那句假的"不写入任何存储"显得也可信。
+3. **变异测试也可能被环境骗过。** `file://` 下 cookie 赋值无效，于是"没有 cookie"
+   永真。写断言前先确认**这个环境下失败是可能的**——否则测的不是代码，是环境。

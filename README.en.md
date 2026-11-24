@@ -223,8 +223,13 @@ Open any session with an AI execution trace → a "Trace View" tab appears next 
 ## 10. Security & compliance
 
 - **Read-only**: only renders the `TrajectorySnapshot` the session view already produced; no business-DOM mutation, no file modification or deletion, no host route, no network access.
-- **Local data**: everything is processed inside the browser; the raw request is rebuilt only when you open its panel, and nothing is written to storage.
-- **No persistence**: nothing written to localStorage / cookies; uninstalling leaves no trace.
+- **Local data**: everything is processed inside the browser; the raw request is rebuilt only when you open its panel, and nothing is ever uploaded anywhere.
+- **The one write: two pieces of view state in `sessionStorage`.** So that a host remount does not drop you back to "overview with an empty search box", each conversation gets one entry `dstv:view:1:<sessionKey>` holding `{ revealed, query }` — how far the window was expanded (a number) and the search text (≤200 chars).
+  - **This tab only** (sessionStorage, not localStorage): never shared across tabs or windows, gone when the tab closes.
+  - **Removed, not blanked**: when both fields are empty the key is deleted rather than left behind.
+  - **Works with storage disabled**: every access is inside `try/catch`, so a host that blocks storage behaves exactly as before and never throws.
+  - Note: the search box text is part of that entry — **if you typed something sensitive into the search box it stays in this tab's sessionStorage** until the tab closes or the query is cleared.
+- **No persistence**: nothing written to localStorage / cookies / IndexedDB; no server, no telemetry; uninstalling leaves no trace.
 
 ## 11. Development & build
 
@@ -249,7 +254,7 @@ The tests run the helper region against mock snapshots covering: tree building /
 **What needs a real browser** (`react-dom/server` cannot see scroll, focus, clipboard, intervals or layout):
 
 ```powershell
-node scripts/browser-check.mjs          # builds the harness; 62 assertions over 14 recorded groups
+node scripts/browser-check.mjs          # builds the harness; 69 assertions over 15 recorded groups
 node scripts/browser-check.mjs --shots  # saves screenshots and adds 1 more group / 2 assertions: 375px overflow (14 total)
 ```
 
