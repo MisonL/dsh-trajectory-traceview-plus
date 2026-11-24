@@ -109,7 +109,7 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 ├── CHANGELOG.md          # 发布记录（version-check 会核对版本条目）
 ├── screenshot/           # 效果截图（README「效果预览」用）
 ├── .github/workflows/
-│   └── check.yml         # CI：8 项门禁（本地命令的同序复现）
+│   └── check.yml         # CI：9 项门禁（本地命令的同序复现）
 ├── src/                  # 浏览器端源码（lib/client.js 由它生成，不要手改产物）
 ├── scripts/
 │   ├── build-client.mjs  # src/ -> lib/client.js
@@ -120,6 +120,7 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 │   ├── readme-numbers.mjs # README 里的数字与代码一致（数出来，不手写）
 │   ├── release-status.mjs # 查 tag / Release / npm 元数据 / tarball / @latest 解析（需联网，不进 CI）
 │   ├── guard-check.mjs   # 用已知复杂度验证 P1 性能守卫是否还能分辨线性/二次（测时间，不进 CI）
+│   ├── shortcut-check.mjs # README §7 的每个键在 probe 里都得有断言（进 CI）
 │   ├── browser-check.mjs # 真浏览器断言（需 agent-browser）
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md（每处改动的原因）/ PROVENANCE.md（自动生成）
@@ -253,8 +254,8 @@ node scripts/provenance.mjs
 改了 `src/`却忘了重建时，`--check`会失败，`test/smoke.test.cjs`也会报 `BUILD1`。`lib/index.js`（宿主半部）是无操作桩；`lib/client.js`是经典脚本（`window.__ModuleLoader__.load`），由客户端模块系统直接服务。
 
 ```powershell
-npm run check              # 7 步：build --check / provenance --check / version-check
-                           #       doc-ref-check / doc-heading-check / smoke / readme-numbers
+npm run check              # 8 步：build --check / provenance --check / version-check / doc-ref-check
+                           #       doc-heading-check / smoke / readme-numbers / shortcut-check
 npm test                   # 只跑 smoke
 ```
 
@@ -263,7 +264,7 @@ npm test                   # 只跑 smoke
 **需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
 
 ```powershell
-node scripts/browser-check.mjs          # 起 harness，跑 47 条断言 / 记录 13 组观测
+node scripts/browser-check.mjs          # 起 harness，跑 62 条断言 / 记录 14 组观测
 node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 2 条断言（375px 溢出，共 14 组）
 ```
 
@@ -327,7 +328,7 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 # 1-3 改内容
 #   改 package.json 的 version、补 CHANGELOG.md 的版本条目
 node scripts/provenance.mjs              # 4. 刷新来源清单（新增/改名文件后必须重跑）
-npm run check                            # 5. 7 步门禁，全绿再往下
+npm run check                            # 5. 8 步门禁，全绿再往下
 git add -A; git commit -m "..."          # 6.
 git push origin main                     # 7.
 git tag -a v0.11.2 -m "..."              # 8.
@@ -350,12 +351,12 @@ node scripts/release-status.mjs          # 12. 四处对齐了吗？（tag / Rel
 - 版本号相对已有 tag 倒退 → 同上（`F3`）
 
 这些检查都在 CI 里跑（`.github/workflows/check.yml`），push 到 main 和提 PR 时自动执行。
-门禁本身是 8 项：`build-client --check`、`node --check lib/client.js`、`provenance --check`、
-`version-check`、`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers
+门禁本身是 9 项：`build-client --check`、`node --check lib/client.js`、`provenance --check`、
+`version-check`、`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers、shortcut-check
 （前面还有一步 `npm ci --include=dev` 装依赖）。
 
-本地 `npm run check` 跑其中 7 步（`build-client --check`、`provenance --check`、`version-check`、
-`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers）——只差 CI 里的
+本地 `npm run check` 跑其中 8 步（`build-client --check`、`provenance --check`、`version-check`、
+`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers、shortcut-check）——只差 CI 里的
 `node --check lib/client.js`，够用于日常提交；发布前再按 §11 把 `browser-check` 也跑一遍。
 
 **这些数字本身也有门禁**：`readme-numbers` 直接从 `check.yml`、`package.json` 和

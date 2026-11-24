@@ -83,6 +83,9 @@ jobs:
       - name: README numbers agree with the code
         run: node scripts/readme-numbers.mjs
 
+      - name: Documented shortcuts are exercised by the probe
+        run: node scripts/shortcut-check.mjs
+
 # NOT run here, deliberately:
 #   scripts/browser-check.mjs — needs a real Chrome over CDP (`agent-browser`).
 #   Installed locally before release; wiring a browser into this runner is more

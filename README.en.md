@@ -117,6 +117,7 @@ dsh-trajectory-traceview-plus/   # repo root (directory name == npm package name
 │   ├── readme-numbers.mjs # README numbers match the code (computed, not typed)
 │   ├── release-status.mjs # tag / Release / npm metadata / tarball / @latest resolution (network; not in CI)
 │   ├── guard-check.mjs   # feed the P1 growth guard known complexities; does it still tell them apart? (timing; not in CI)
+│   ├── shortcut-check.mjs # every key in README §7 must be exercised by the probe (in CI)
 │   ├── browser-check.mjs # real-browser assertions (needs agent-browser)
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md (why each change) / PROVENANCE.md (generated)
@@ -238,8 +239,8 @@ node scripts/provenance.mjs
 Editing `src/` without rebuilding makes `--check` fail and the smoke suite report `BUILD1`. `lib/index.js` (host half) is a no-op stub; `lib/client.js` is a classic script (`window.__ModuleLoader__.load`) served directly by the client module system.
 
 ```powershell
-npm run check              # 7 steps: build --check / provenance --check / version-check
-                           #          doc-ref-check / doc-heading-check / smoke / readme-numbers
+npm run check              # 8 steps: build --check / provenance --check / version-check / doc-ref-check
+                           #          doc-heading-check / smoke / readme-numbers / shortcut-check
 npm test                   # smoke only
 ```
 
@@ -248,7 +249,7 @@ The tests run the helper region against mock snapshots covering: tree building /
 **What needs a real browser** (`react-dom/server` cannot see scroll, focus, clipboard, intervals or layout):
 
 ```powershell
-node scripts/browser-check.mjs          # builds the harness; 47 assertions over 13 recorded groups
+node scripts/browser-check.mjs          # builds the harness; 62 assertions over 14 recorded groups
 node scripts/browser-check.mjs --shots  # saves screenshots and adds 1 more group / 2 assertions: 375px overflow (14 total)
 ```
 
@@ -328,6 +329,6 @@ Three things guard the release, and all live in CI (`.github/workflows/check.yml
 - version / tag disagreement — `node scripts/version-check.mjs` fails (`F1`)
 - a missing `CHANGELOG.md` entry for the version (`F2`), or a version that goes backwards relative to an existing tag (`F3`)
 
-CI runs those 8 gates plus an install step (`npm ci --include=dev`): `build-client --check`, `node --check lib/client.js`, `provenance --check`, `version-check`, `doc-ref-check`, `doc-heading-check`, smoke, readme-numbers. `npm run check` runs 7 of them locally (build, provenance, version-check, doc-ref-check, doc-heading-check, smoke, readme-numbers) — everything but `node --check lib/client.js`; run `browser-check` too before releasing — see §11.
+CI runs those 9 gates plus an install step (`npm ci --include=dev`): `build-client --check`, `node --check lib/client.js`, `provenance --check`, `version-check`, `doc-ref-check`, `doc-heading-check`, smoke, readme-numbers, shortcut-check. `npm run check` runs 8 of them locally (build, provenance, version-check, doc-ref-check, doc-heading-check, smoke, readme-numbers, shortcut-check) — everything but `node --check lib/client.js`; run `browser-check` too before releasing — see §11.
 
 **Those numbers have a gate of their own**: `readme-numbers` derives the true values from `check.yml`, `package.json` and `test/browser/probe.js`, then checks both READMEs against them. A number written down twice will eventually disagree with itself (§13.37).

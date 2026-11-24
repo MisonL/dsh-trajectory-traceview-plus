@@ -59,6 +59,86 @@
 	if (selected().length !== 0) fail("End should return to the overview (no selection), got " + JSON.stringify(selected()));
 	info.keyboard = "ok";
 
+	// 3b) the documented shortcut table (README §7) has nine rows; this probe used to
+	// cover four of them. Space, PageUp/PageDown, `/`, `f` and `r` were promised to
+	// users and verified by nothing — the gap §13.56 records. One group, so a
+	// regression names itself instead of hiding behind "keyboard = ok".
+	{
+		const root = document.querySelector(".dstv_root");
+		const searchEl = () => document.querySelector("input.dstv_searchInput:not(.dstv_anchorInput)");
+
+		// `/` and `f` both focus the search box. They are one documented row, but the
+		// handler has two branches, so both get checked.
+		for (const key of ["/", "f"]) {
+			root.focus();
+			await press(key);
+			if (document.activeElement !== searchEl()) fail("`" + key + "` did not focus the search box");
+		}
+
+		// Space starts and stops replay — the second documented way to do what the
+		// buttons do. The buttons are covered in group 6; this covers the key.
+		root.focus();
+		const home0 = selected()[0];
+		await press(" ");
+		await tick(300);
+		const sp0 = selected()[0];
+		await tick(2200);
+		const sp1 = selected()[0];
+		if (!(typeof sp1 === "number" && sp1 > sp0)) fail("Space did not start replay (" + sp0 + " -> " + sp1 + ")");
+		await press(" ");
+		await tick(200);
+		const sp2 = selected()[0];
+		await tick(1600);
+		if (selected()[0] !== sp2) fail("Space did not stop replay");
+
+		// PageUp/PageDown land on TURN starts, never on an arbitrary station.
+		await press("Home");
+		await press("PageDown");
+		const pd = selected()[0];
+		if (!(typeof pd === "number" && pd > 0)) fail("PageDown did not move forward from station 0 (got " + JSON.stringify(pd) + ")");
+		await press("PageDown");
+		const pd2 = selected()[0];
+		if (!(typeof pd2 === "number" && pd2 > pd)) fail("a second PageDown did not advance past " + pd + " (got " + JSON.stringify(pd2) + ")");
+		await press("PageUp");
+		if (selected()[0] !== pd) fail("PageUp did not return to " + pd + " (got " + JSON.stringify(selected()[0]) + ")");
+
+		// `r` toggles the request tab, but ONLY where a request exists. Pick a step
+		// station (they carry `request`) and check both directions plus the guard.
+		const stepSt = [...document.querySelectorAll(".dstv_station")]
+			.find((o) => (o.getAttribute("aria-label") || "").indexOf("步骤") >= 0);
+		if (stepSt === undefined) fail("the fixture has no step station for the `r` check");
+		else {
+			stepSt.click();
+			await tick();
+			root.focus();
+			// The tabs are `button.dstv_tab` with `aria-pressed` / `data-on`, not
+			// `[role=tab]` with `aria-selected`. My first version selected on the ARIA
+			// tab pattern, matched nothing, and reported "`r` did not switch the tab"
+			// with the tab text as "" — the probe was wrong, not the shortcut. Read the
+			// attribute the component actually sets.
+			const tabOf = () => {
+				const on = [...document.querySelectorAll("button.dstv_tab")]
+					.filter((t) => t.getAttribute("aria-pressed") === "true");
+				return on.length > 0 ? (on[0].textContent || "").trim() : "";
+			};
+			const t0 = tabOf();
+			await press("r");
+			const t1 = tabOf();
+			if (t1 === t0) fail("`r` did not switch the detail tab (stayed on " + JSON.stringify(t0) + ")");
+			await press("r");
+			if (tabOf() !== t0) fail("a second `r` did not switch back to " + JSON.stringify(t0));
+		}
+
+		// Leave NO selection: group 4 asserts that typing a query does not move the
+		// view, which only means anything from the overview state the keyboard group
+		// ended in. My first version pressed Home here and the search group then failed
+		// with "typing a query moved the view before any navigation" — the probe had
+		// changed the precondition of a later assertion, which is worse than a gap.
+		await press("End");
+		if (selected().length !== 0) fail("could not return to the overview after the shortcut checks");
+		info.shortcuts = "ok";
+	}
+
 	// 4) search: no false position before navigating, then ↓ walks the matches and scrolls
 	const input = document.querySelector("input.dstv_searchInput:not(.dstv_anchorInput)");
 	if (input === null) fail("the search input is missing");
@@ -84,6 +164,34 @@
 			next.click();
 			await tick();
 			if (counter.textContent.indexOf("2/") < 0) fail("the second ↓ did not advance: " + counter.textContent);
+			// `↑` / `↓` inside the search box — a documented row (README §7) that was
+			// silently missing from the implementation until §13.57. Assert the counter
+			// MOVES: "the view did something" is not the claim, "next match" is.
+			const searchBox = document.querySelector("input.dstv_searchInput:not(.dstv_anchorInput)");
+			searchBox.focus();
+			const cntBefore = counter.textContent;
+			await press("ArrowDown");
+			const cntDown = counter.textContent;
+			if (cntDown === cntBefore) fail("`↓` in the search box did not move to the next match (stayed " + cntBefore + ")");
+			await press("ArrowUp");
+			if (counter.textContent !== cntBefore) fail("`↑` did not return to " + cntBefore + " (got " + counter.textContent + ")");
+			// Enter / Shift+Enter — the third documented jump pair (README §7) and the
+			// one most people actually use. Shift+Enter must move BACKWARD; testing only
+			// Enter would pass even if shiftKey were ignored entirely.
+			const shiftPress = async (k, shiftKey) => {
+				document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: k, shiftKey, bubbles: true, cancelable: true }));
+				await tick();
+			};
+			searchBox.focus();
+			const cntEnter0 = counter.textContent;
+			await shiftPress("Enter", false);
+			const cntEnter1 = counter.textContent;
+			if (cntEnter1 === cntEnter0) fail("`Enter` did not move to the next match (stayed " + cntEnter0 + ")");
+			await shiftPress("Enter", true);
+			if (counter.textContent !== cntEnter0) fail("`Shift+Enter` did not step back to " + cntEnter0 + " (got " + counter.textContent + ")");
+			// Esc clears the query and leaves the overview reachable again.
+			await press("Escape");
+			if (searchBox.value !== "") fail("`Esc` did not clear the search box (value " + JSON.stringify(searchBox.value) + ")");
 			info.search = counter.textContent;
 		}
 	}
