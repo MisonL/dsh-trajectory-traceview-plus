@@ -6828,7 +6828,7 @@ README §14 自己写着「版本号与 tag 不一致 → 暂无自动检查，�
 
 |文件 |作用 |
 |---|---|
-|`.github/workflows/check.yml` |push main / pull_request / tag / 手动触发；5 步门禁（**后扩至 7 项**，见 §13.35 之后的两道文档校验）|
+|`.github/workflows/check.yml` |push main / pull_request / tag / 手动触发；5 步门禁（**后扩至 7 项**，见 §13.35 之后的两道文档校验；**再扩至 8 项**，加 §13.42 的 `readme-numbers`）|
 |`scripts/version-check.mjs` |F1 tag 指的版本与提交不符；F2 CHANGELOG 缺条目；F3 版本倒退 |
 |`package-lock.json` |CI 用 `npm ci` 所需的锁文件 |
 
@@ -7366,3 +7366,70 @@ Error: P1 ... 3100 nodes 86.5 ms -> 6200 nodes 265.4 ms
 3. 「本机全绿」对时序类断言的信息量接近零。真正有信息量的是**分布**：连跑 4 次
    的比值是多少，CI 上又是多少。
 4. 取最小值是有理论依据的选择，不是"试几次碰运气"：单向噪声下 min 才是无偏估计。
+
+
+### 13.42 把「核对数字」从一次性脚本变成门禁（2026-11-24）
+
+#### 起因：我自己的审计脚本已经丢过一次
+
+前面几轮我反复手写临时脚本核对 README 里的数字（§13.37）。这次复查时它们
+**已经不在 `/tmp` 里了**——`Cannot find module`。做过的核对全部蒸发，只剩
+DESIGN 里的一段描述。
+
+这就是「一次性验证」的典型寿命：它证明过一件事，然后消失，下次还得重来。
+更要紧的是，**没人会重来**。
+
+#### 所以把它固化成 `scripts/readme-numbers.mjs`
+
+三个数字，三处真源，全部**静态推导**（不跑浏览器、不联网，所以能进 CI）：
+
+| 文档里的说法 | 真源 | 推法 |
+|---|---|---|
+| 「CI 门禁 8 项」 | `.github/workflows/check.yml` | 数 `- name:` 行，减掉 Install |
+| 「`npm run check` 跑 7 步」 | `package.json` | `scripts.check` 按 `&&` 切段 |
+| 「13 组观测 / 47 条断言」 | `test/browser/probe.js` | 数 `info.X =` 赋值、数 `fail(` 调用 |
+
+第三条特意用静态分析而不是跑 `browser-check`：那个需要 Chrome，一旦依赖它，
+这道门禁就没法进 CI，而进不了 CI 的门禁等于没有。
+
+#### 一个关键的自我约束
+
+如果某天门禁的正则和文档措辞脱节，它会**匹配到零处**然后报绿——比没有门禁更糟
+（它给的是虚假安全感）。所以脚本里有一条：
+
+```js
+if (total === 0) {
+	console.error('readme-numbers: found NO numeric claim to check — the patterns have drifted from the prose');
+	process.exit(1);
+}
+```
+
+**「什么都没检查到」必须是失败**，不能是成功。这和 §13.39 的教训是同一件事的
+反面：那边是正则只看行首导致漏检，这边是主动把「漏检」变成显式错误。
+
+#### 变异验证（四个，全部从绿变红）
+
+| 变异 | 结果 |
+|---|---|
+| `# CI：7 项门禁` → `5`（历史真犯过） | `README.md:112 — ciGates says 5, actual 7` |
+| 「跑其中 6 步」→ `7` | `README.md:295 — localSteps says 7, actual 6` |
+| `47 assertions` → `40` | `README.en.md:233 — assertions says 40, actual 47` |
+| **真给 workflow 加一步**，文档不动 | `README.md:292 / README.en.md:285 — ciGates says 7, actual 8` |
+
+第四个最重要：它证明门禁是**双向**的——不是只防"文档写错"，也防"代码改了文档
+没跟上"。这才是它作为门禁的价值。
+
+#### 顺带：它把自己也算进了数字
+
+把 `readme-numbers` 加进 `npm run check`（6→7 步）和 CI（7→8 项）之后，
+README 立刻因为数字过期而变红——**新门禁第一次运行就抓到了引入它自己的人**。
+改完 README 才绿。这个自我指涉不是巧合，正是设计意图：数字变了，文档必须跟。
+
+#### 教训
+
+1. **一次性脚本的产出会在几天内归零**。想让它持续有用，就把它变成门禁——
+   否则你只是在用一次性劳动反复买同一个结论。
+2. 门禁「匹配到零处」要报错。空集合上的「全部通过」是最危险的绿。
+3. 优先选**静态可推导**的真源。能静态算的，就别为了"更真实"而依赖浏览器/网络，
+   那会把门禁挡在 CI 门外。
+4. 新门禁抓到的第一个违规者常常是引入它的人。这不是打脸，这是它在工作。

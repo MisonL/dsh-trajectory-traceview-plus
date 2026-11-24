@@ -75,6 +75,14 @@ jobs:
       - name: Smoke tests
         run: node test/smoke.test.cjs
 
+      # The READMEs state three derived counts (CI gates, `npm run check` steps,
+      # browser-check observations/assertions). Every one of them has drifted at
+      # least once — the directory tree said "5 项门禁" for weeks after the count
+      # became 7. A number that can be computed should not be typed, so this reads
+      # the workflow, package.json and probe.js and fails on disagreement.
+      - name: README numbers agree with the code
+        run: node scripts/readme-numbers.mjs
+
 # NOT run here, deliberately:
 #   scripts/browser-check.mjs — needs a real Chrome over CDP (`agent-browser`).
 #   Installed locally before release; wiring a browser into this runner is more

@@ -37,6 +37,7 @@
 - `scripts/doc-heading-check.mjs`
 - `scripts/doc-ref-check.mjs`
 - `scripts/provenance.mjs`
+- `scripts/readme-numbers.mjs`
 - `scripts/version-check.mjs`
 - `src/00-locale.js`
 - `src/10-styles.js`
