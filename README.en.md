@@ -247,9 +247,19 @@ This plugin reads the official trajectory snapshot (`eventNodes` / `requests` / 
 - **Version drift is stated loudly**: if a DSH upgrade renames fields or node kinds, the header shows `⚠ N record(s) not recognized [kinds]`; if *nothing* is recognizable you get "Cannot recognize this session's trajectory data" with reason codes — **never a silent "no data yet" or a plausible-looking partial trace**.
 - **The host is never accused wrongly**: `kind: "unknown"` is a *named* node kind in the contract (the host saying "I do not model this event"), so it renders as a first-class station carrying the event type and its raw payload, and it is **not** counted as drift. Only genuinely unseen kinds raise the alarm — one exotic event must not make the whole tree claim the format is unrecognized.
 
-`engines.dsh` is pinned to `=0.2.2-rc.2` (verified live on 2026-11-14). The earlier `=0.2.1-rc.5` conclusions are kept in `docs/DESIGN.md` §12.25–§12.27.
+`engines.dsh` is `>=0.2.2-rc.2 <0.2.3-0` — it covers **only the 0.2.2 line that was actually tested**, and stops at the minor boundary. Earlier hard-pin conclusions (`=0.2.1-rc.5`, `=0.2.2-rc.2`) are kept in `docs/DESIGN.md` §12.25–§12.27 and §13.43.
 
-**Why a hard pin instead of a range**: DSH validates `engines.dsh` at boot and *skips* an unmatched plugin outright (`skipping profile bundle … requirements {"engines.dsh":…}`) instead of degrading. Getting the pin wrong therefore makes the whole tab vanish — louder and easier to explain than a build that looks fine and misbehaves inside.
+**DSH *skips* an unmatched plugin** at boot (`skipping profile bundle … requirements {"engines.dsh":…}`) instead of degrading it, so getting the requirement wrong makes the whole tab vanish.
+
+**Why a range instead of a hard pin**: the hard pin's cost came due on 0.2.2-rc.5 — the host moved one patch version and the tab vanished, though nothing in the plugin was broken. A range means patch releases inside the same minor no longer require a matching plugin release.
+
+**Why the range stops at the minor boundary**: the ceiling is `<0.2.3-0`, not `<0.3.0`. Declaring compatibility is declaring *tested*; 0.2.3 has not been tested, so it is not claimed. On a new minor the plugin is skipped again, which is the signal to re-verify and cut a release — **being skipped is a clear signal, and far better than silently degrading**. To unblock temporarily, use the host's exact-version exemption:
+
+```bash
+dsh plugin allow-version        # interactive; see dsh plugin --help
+```
+
+The host prints the exact command in the skip warning.
 
 ## 13. License
 
@@ -268,12 +278,12 @@ Substantive changes versus upstream: stable anchors and deep-link parsing, orpha
 
 | Change | Position | Example |
 | --- | --- | --- |
-| `engines.dsh` pin moves (host upgrade) | **minor** | `0.7.0 → 0.8.0` for DSH 0.2.2 |
+| `engines.dsh` moves (re-pin or widen to a range) | **minor** | `0.7.0 → 0.8.0` for DSH 0.2.2; `0.10.0 → 0.11.0` for the range |
 | New capability, or changed behaviour | **minor** | `0.8.2 → 0.9.0` light theme + a11y |
 | Fixes, performance, copy, docs | **patch** | `0.8.1 → 0.8.2` |
 | Breaking (anchor format, view id, config) | **major** | none yet |
 
-`engines.dsh` is pinned to a **single** version, so every host upgrade may require a matching plugin release. That is why the number moves fastest — it is not feature bloat.
+`engines.dsh` covers only the current minor, so a host minor bump still requires a matching plugin release. That is one reason the number moves fastest — it is not feature bloat.
 
 **Release steps**: bump the version, tag it (`v0.9.1`), and run `node scripts/provenance.mjs`.
 
