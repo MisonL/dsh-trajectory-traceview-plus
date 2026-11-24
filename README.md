@@ -131,11 +131,31 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 
 ## 5. 快速开始
 
-一键安装（GitHub）：
+从 npm 安装（推荐，**写死版本号**）：
 
 ```powershell
-dsh plugin --profile web add github:MisonL/dsh-trajectory-traceview-plus
+dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.0
 ```
+
+> **为什么不用 `@latest`**：`dsh plugin` 底层是 pnpm，而 **pnpm 12 有供应链延迟保护**
+> （`minimumReleaseAge`）：太新的版本不会被 `@latest` 选中，pnpm 会**静默退回上一个版本**
+> ——不打任何警告。0.11.0 刚发布时实测 `pnpm add pkg@latest` 装到的是 0.10.0，
+> 而那版本在新宿主上会被跳过。写死版本号就没有这个歧义（冷/热缓存实测都能装到 0.11.0）。
+>
+> 顺带：本包的 `0.0.0-stage` 那个早期测试版本元数据残缺（缺 `size` 字段），
+> 冷缓存下走 `@latest` 解析时 pnpm 会因此直接失败（`numeric field was not a number`）。
+> 写死版本号绕开这条路径。
+
+从 GitHub 安装（**必须带 tag**）：
+
+```powershell
+dsh plugin --profile web add "github:MisonL/dsh-trajectory-traceview-plus#v0.11.0"
+```
+
+> **为什么必须带 `#v0.11.0`**：`github:` 规格不带 ref 时装的是**默认分支的 HEAD**，
+> 不是任何发布版本。而这个仓库在发版后还会继续提交（本轮 v0.11.0 之后就有 5 个
+> 文档/脚本提交），所以"不带 ref"装到的东西**明天可能是另一个样子**，而版本号
+> 仍写着 0.11.0。带 tag 才能让"装到的"和"发布过的"是同一份代码。
 
 然后**重启 `dsh web`** 生效。
 

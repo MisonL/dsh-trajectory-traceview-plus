@@ -7870,3 +7870,94 @@ npm registry    ● 0.11.0 = latest；0.10.0 已 deprecate
 ```
 
 `node scripts/release-status.mjs` → `consistent everywhere`。
+
+
+### 13.49 `@latest` 会静默装到旧版本：pnpm 12 的供应链延迟（2026-11-24）
+
+#### 现象
+
+0.11.0 发布、`release-status` 三处全绿之后，我用 README 里写的命令在隔离
+`DSH_HOME` 里装：
+
+```powershell
+dsh plugin --profile web add dsh-trajectory-traceview-plus@latest
+```
+
+结果：
+
+```
+Plugin dsh-trajectory-traceview-plus@0.10.0 is incompatible with dsh 0.2.2-rc.5
+dsh: plugin command failed
+```
+
+**刚发布的 0.11.0 就在 registry 上，`@latest` 却装到了 0.10.0。**
+
+#### 根因：pnpm 12 的 `minimumReleaseAge`
+
+pnpm 12 内置供应链延迟保护：太新的版本不参与 `@latest` 解析。默认值让刚发布的
+版本在**一段时间内不可见**。实测判据很干脆：
+
+```
+pnpm add pkg@latest                          → 0.10.0   （静默）
+pnpm add pkg@latest --config.minimumReleaseAge=0 → 0.11.0   （立刻正确）
+pnpm add pkg@0.11.0                          → 0.11.0   （正确，冷/热缓存都行）
+```
+
+`pnpm view pkg version` 报的是 `0.11.0`，`pnpm view pkg dist-tags` 也是
+`{"latest":"0.11.0"}`，缓存文件里的 `distTags` 也对——**只有真正的安装路径
+会退回旧版，而且不打任何警告**。
+
+#### 为什么这个坑特别毒
+
+它的表现和「发布失败」**完全一样**：装到旧版本 → 旧版本 `engines.dsh` 不匹配
+→ 宿主拒绝 → 报错信息里写的是旧版本号。上一轮我刚因为「以为发布了其实没发」
+坑过一次，这次是**真发布了，但安装路径自己退回去了**。
+
+也就是说：§13.47 的教训（`npm publish` 是叶子步骤，漏了没报错）刚记住，
+它的下一个变体就出现了——**发布成功也不等于用户装得到**。
+
+#### 附带发现的第二个问题
+
+`0.0.0-stage` 是本包最早的测试版本，元数据残缺（`dist` 里缺 `size` 字段，
+只有 `fileCount` / `unpackedSize`）。后果是：**冷缓存下走 `@latest` 解析时，
+pnpm 会去拉这个版本的 tarball 并硬失败**：
+
+```
+[WARN] GET .../dsh-trajectory-traceview-plus-0.0.0-stage.tgz error
+       (numeric field was not a number:  when getting size for package)
+× adding a new package
+╰─▶ numeric field was not a number:  when getting size for package
+```
+
+写死版本号不走这条路径，冷缓存实测成功。这条只能靠「别用 `@latest`」规避，
+已发布的元数据改不了。
+
+#### 修法
+
+两份 README 的安装命令从 `@latest` 改成**写死版本号**，并写明为什么：
+
+> pnpm 12 有供应链延迟保护，太新的版本不会被 `@latest` 选中，pnpm 会静默退回
+> 上一个版本——不留任何警告。
+
+这不是"绕过问题"，而是**承认版本解析不该由本插件来承诺**。读者要的是「装上能用
+的 0.11.0」，写死版本号直接给出这个结果；`@latest` 把结果交给了三个变量（注册表
+CDN、pnpm 策略、时间），而这三样都不在插件的控制里。
+
+#### 验证
+
+隔离 `DSH_HOME` 用新命令实装：
+
+```
+dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.0
++ dsh-trajectory-traceview-plus 0.11.0
+dump-config: 0 条 skip，插件行存在
+```
+
+#### 教训
+
+1. **"发布成功"有三个后续环节**：registry 写入 → CDN 复制 → **包管理器愿意选它**。
+   前两个我上一轮已经学到，第三个是新的：包管理器可能出于安全策略**主动不选**。
+2. **静默降级比报错危险**。这里 pnpm 在保护用户（防止刚发布的恶意包），但它
+   不说，于是表现成"发布没成功"。**安全默认值 + 无提示 = 一个看起来像 bug 的正确行为。**
+3. 文档里的安装命令要**可验证**。我上一轮写 `@latest` 时没在干净环境跑过；
+   这一轮跑一下就露了。凡是"用户会照抄"的命令，必须自己先照抄一遍。
