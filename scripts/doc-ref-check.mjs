@@ -54,9 +54,41 @@ lines.forEach((line, i) => {
 });
 
 console.log('doc-ref-check: ' + sections.size + ' sections, ' + markedDeleted + ' reference(s) to withdrawn sections (explicitly marked)');
+
+// ── the READMEs point INTO this document too, and nothing was checking that ──
+//
+// Both READMEs cite `docs/DESIGN.md` §x.y ("why hard pin" -> §12.25-§12.27,
+// `readme-numbers` -> §13.37, the engines range -> §13.43). Those pointers were only
+// ever verified by hand, in a throwaway script, twice — the same "one-off check"
+// failure that §13.42 records for the README counts.
+//
+// A README reference gets a stricter rule than a DESIGN one: there is no "marked as
+// deleted" escape hatch, because a README is the first thing a reader opens and a
+// pointer to a section that no longer exists is just broken.
+const readmeProblems = [];
+for (const file of ['README.md', 'README.en.md']) {
+	const body = readFileSync(join(ROOT, file), 'utf8');
+	body.split('\n').forEach((line, i) => {
+		for (const m of line.matchAll(/§\s*(\d+\.\d+)/g)) {
+			if (!sections.has(m[1])) readmeProblems.push(file + ':' + (i + 1) + ': §' + m[1] + ' does not exist in docs/DESIGN.md');
+		}
+		// `§11`-style references point at the README's OWN numbered sections. `§1.2`
+		// was handled above, so only bare integers reach here.
+		for (const m of line.matchAll(/§\s*(\d+)(?!\.\d)/g)) {
+			const own = new Set([...body.matchAll(/^## (\d+)\./gm)].map((x) => x[1]));
+			if (!own.has(m[1])) readmeProblems.push(file + ':' + (i + 1) + ': §' + m[1] + ' is not a section of this file');
+		}
+	});
+}
+
 if (dangling.length > 0) {
 	for (const d of dangling) console.error('  ✗ ' + d);
 	console.error('doc-ref-check: FAIL (' + dangling.length + ' reference(s) to sections that do not exist)');
+	process.exit(1);
+}
+if (readmeProblems.length > 0) {
+	for (const p of readmeProblems) console.error('  ✗ ' + p);
+	console.error('doc-ref-check: FAIL (' + readmeProblems.length + ' broken README cross-reference(s))');
 	process.exit(1);
 }
 console.log('DOC REFS OK');
