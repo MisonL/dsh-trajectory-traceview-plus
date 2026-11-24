@@ -42,12 +42,28 @@ const MODULES = {
  * hand-written light values — good enough for layout, not for judging dark contrast.
  */
 function findHostThemeCss() {
-	const npmRoot = process.env.DSH_THEME_CSS;
-	const candidates = [
-		npmRoot,
-		"/Users/mison/.nvm/versions/node/v24.22.1/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css"
-	].filter(Boolean);
-	for (const c of candidates) {
+	const candidates = [process.env.DSH_THEME_CSS];
+
+	// Derive it instead of hardcoding. The old version embedded one machine's absolute
+	// path, which silently fell back to hand-written colours everywhere else — so dark
+	// contrast was only ever judged on one developer's laptop, and a reader of this repo
+	// had no way to know the stylesheet was missing.
+	//
+	// Resolve `dsh` by walking PATH rather than shelling out to `which`: no shell, no
+	// quoting surprises, and it works the same on every platform.
+	const suffixes = process.platform === "win32" ? [".cmd", ".exe", ""] : [""];
+	for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+		if (dir === "") continue;
+		for (const suffix of suffixes) {
+			let real;
+			try { real = fs.realpathSync(path.join(dir, "dsh" + suffix)); } catch { continue; }
+			// <prefix>/lib/node_modules/@deepseek-ai/dsh/lib/bin.js -> <prefix>/lib/node_modules
+			const modules = path.dirname(path.dirname(path.dirname(path.dirname(real))));
+			candidates.push(path.join(modules, "@deepseek-ai/dsh", "node_modules", "@deepseek-ai/dsh-client-ui-theme", "src", "styles", "design-platform.css"));
+		}
+	}
+
+	for (const c of candidates.filter(Boolean)) {
 		try { if (fs.statSync(c).size > 0) return fs.readFileSync(c, "utf8"); } catch { /* next */ }
 	}
 	return null;

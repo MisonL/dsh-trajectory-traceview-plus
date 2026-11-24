@@ -7103,3 +7103,73 @@ console.log("browser-check: PASS (" + Object.keys(parsed.info).length + " checks
 2. 文档里同一个事实写两遍，就有两处会过期。要么只写一处，要么让脚本核对。
 3. 审计脚本也会有 bug。第一版误报说明：**报错时先怀疑尺子**，别急着改被量的
    东西。
+
+
+### 13.38 `scripts/` 里躺着一条本机绝对路径（2026-11-24）
+
+#### 怎么发现的
+
+复查时我扫了全仓的绝对路径：
+
+```
+$ git ls-files -z | xargs -0 grep -lE '/Users/[a-zA-Z]+|/Volumes/'
+docs/DESIGN.md
+scripts/browser-harness.mjs
+```
+
+`docs/DESIGN.md` 里那些是本机实测记录，属于历史证据，合理。但
+`scripts/browser-harness.mjs` 里这一条不是记录，**是逻辑**：
+
+```js
+const candidates = [
+	process.env.DSH_THEME_CSS,
+	"/Users/mison/.nvm/versions/node/v24.22.1/lib/node_modules/.../design-platform.css"
+];
+```
+
+更糟的是 `package.json` 的 `files` 包含 `scripts/`——**这一行会随 npm 包发布
+给所有人**。任何别人跑 `browser-harness`，这条路径都不存在，于是静默落到
+hand-written 的浅色值。
+
+#### 危害不在"泄露用户名"
+
+用户名在仓库作者信息里本来就有。真正的危害是**它让一项验证只在一个人机器上有效**：
+
+harness 内联宿主真实主题样式表的目的是「两套主题都能如实演练」。硬编码路径在
+别人机器上永远失败 → 别人跑出来的 dark 对比度结论是拿假数据得出的，而**脚本
+不会报错，只在结尾印一句 FALLBACK**，很容易被忽略。
+
+这和 §13.36 是同一类：**看起来在检查，其实检查的条件不具备**。
+
+#### 修法：从 `dsh` 的真实位置推导
+
+不 shell 出去调 `which`（要处理引号、平台差异，还会触发
+`DEP0190` 警告），而是自己遍历 `PATH`：
+
+```
+for (const dir of process.env.PATH.split(path.delimiter)) {
+  const real = fs.realpathSync(path.join(dir, "dsh"));   // <prefix>/bin/dsh
+  // realpath → <prefix>/lib/node_modules/@deepseek-ai/dsh/lib/bin.js
+  // 上溯四层 → <prefix>/lib/node_modules
+  // 再拼 @deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/...
+}
+```
+
+Windows 下补 `.cmd` / `.exe` 后缀。找不到就返回 null，保持原有的降级行为。
+
+#### 验证
+
+| 场景 | 输出 |
+|---|---|
+| dsh 在 PATH 上 | `host theme loaded from the installed DSH`（样式内联 368 处命中） |
+| PATH 里没有 dsh（模拟别人机器） | `host theme FALLBACK light only`，脚本 exit 0 不崩 |
+| `grep -c` 检查 `scripts/*.mjs` 里的绝对路径 | 全部 0 |
+
+#### 教训
+
+1. **绝对路径进逻辑，就等于把验证绑在一台机器上**。它不会报错，只会让结论
+   在别处失效——而且失效得很安静。
+2. `files` 里带 `scripts/` 就意味着脚本是**产品的一部分**，要按产品标准衡量，
+   不能当成本地小工具。
+3. 「降级」和「失败」要能区分。这里降级是合理的（没装 DSH 也该能生成页面），
+   但必须**说出来**，否则读者无法判断自己的结果是不是用假数据得出的。
