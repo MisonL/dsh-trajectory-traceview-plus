@@ -7606,3 +7606,64 @@ check` 那一行（或其续行）里。
 2. 摘要错了会让人警惕，指令错了会让人实操。**离"用户会照做"越近的文字，
    越需要机械核对。**
 3. 归一化别名时，门禁自己会先错一次。报错时仍要先怀疑尺子（§13.37）。
+
+
+### 13.45 页面上那枚红色徽章：只打 tag 不建 Release（2026-11-24）
+
+#### 怎么发现的
+
+按"仓库内自洽、仓库外显形"这条线复查对外断言，把 README 里所有外部 URL 逐个
+请求了一遍。其中两个返回 200，但**内容不是我以为的那样**：
+
+```
+$ curl -sL https://img.shields.io/github/v/release/MisonL/dsh-trajectory-traceview-plus.json
+{"label":"release","message":"no releases or repo not found","color":"red",...}
+```
+
+仓库页顶部那枚版本徽章，一直显示红色的 **`release: no releases or repo not found`**。
+
+#### 原因
+
+`git tag` 和 GitHub **Release** 是两样东西。这个仓库打了 32 个 tag，但一个
+Release 都没建：
+
+```
+$ gh api repos/MisonL/dsh-trajectory-traceview-plus/releases --jq length
+0
+```
+
+而徽章用的是 `github/v/release`，读的是 Release。于是它对一个活跃仓库给出了
+"没有发布"——**看起来像废弃项目**。
+
+#### 为什么自己的门禁抓不到
+
+`version-check.mjs` 校验的是「`package.json` 的 version ↔ git tag ↔ CHANGELOG」。
+三者在 tag 那一刻全部一致，门禁全绿。**Release 不在这条链上**，所以它不在任何
+检查的射程内。
+
+这和 §13.43 是同一类：仓库内部一致，对外部世界撒谎。`engines.dsh` 是对宿主的
+断言，徽章是对访客的断言，两者都只能靠"真的去看一眼"才发现。
+
+#### 修法
+
+1. 为 v0.11.0 建 Release（带 changelog 正文）——徽章随后显示 `v0.11.0`。
+   （刚建完仍是红的，是 shields.io 的缓存；加 `?cacheSeconds=60` 立即能看到新值。）
+2. 把「建 Release」写进两份 README 的发布动作清单，并说明**为什么**：
+   徽章读的是 Release，不是 tag。
+
+#### 为什么不干脆把徽章换成 `github/v/tag`
+
+可以，而且 `github/v/tag` 立刻就是对的（`v0.11.0`）。但那样是在**绕开问题**：
+这个包确实会发布（npm），发布这件事本该有一个 Release 承载 changelog 与源码
+包。换成 tag 徽章只是让页面好看，发布流程本身仍然缺一环。
+
+所以选择补上那一环，而不是改徽章的读取口径。
+
+#### 教训
+
+1. **`git tag` ≠ GitHub Release。** 一个给 git 看，一个给人和徽章看。只做前者，
+   仓库页会显示"从未发布"。
+2. 对外断言要**真的请求一次**。URL 返回 200 不代表内容正确——这里两个 200
+   里有一个是"红色错误徽章"，它的 HTTP 状态码完全正常。
+3. 发布清单漏一步的代价是可见的：访客第一眼就看到红色。这类问题不会让任何
+   测试变红，只会让人对项目失去信心。

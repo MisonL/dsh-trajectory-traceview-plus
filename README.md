@@ -293,7 +293,9 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 
 `0.x` 阶段：`engines.dsh` 区间只覆盖当前 minor，跨 minor 仍需跟版——这仍是版本号跳得快的原因之一，不是功能膨胀。
 
-**发布动作**：每次改版本号时同步打 tag（`v0.9.1`），并跑 `node scripts/provenance.mjs` 刷新来源清单。两者都有测试守着：
+**发布动作**：改版本号 → 更新 `CHANGELOG.md` → 跑 `node scripts/provenance.mjs` 刷新来源清单 → 打 tag（`git tag -a v0.11.0`）→ **建 GitHub Release**（`gh release create v0.11.0 --notes-file …`）。
+
+最后一步不是仪式：页面顶部的版本徽章读的是 GitHub **Release**，不是 tag。只打 tag 不建 Release 时徽章会显示红色的 `no releases`——看起来像这个仓已经废弃。
 
 - `docs/PROVENANCE.md` 过期 → 冒烟测试直接失败（`V1`）
 - 版本号与 tag 不一致 → `node scripts/version-check.mjs` 直接失败（`F1`）

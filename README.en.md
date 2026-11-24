@@ -286,7 +286,9 @@ Substantive changes versus upstream: stable anchors and deep-link parsing, orpha
 
 `engines.dsh` covers only the current minor, so a host minor bump still requires a matching plugin release. That is one reason the number moves fastest — it is not feature bloat.
 
-**Release steps**: bump the version, tag it (`v0.9.1`), and run `node scripts/provenance.mjs`.
+**Release steps**: bump the version → update `CHANGELOG.md` → run `node scripts/provenance.mjs` → tag it (`git tag -a v0.11.0`) → **create a GitHub Release** (`gh release create v0.11.0 --notes-file …`).
+
+That last step is not ceremony: the version badge at the top of the page reads the GitHub **Release**, not the tag. Tagging without creating a Release makes the badge show a red `no releases`, which reads as an abandoned repo.
 
 Three things guard the release, and all live in CI (`.github/workflows/check.yml`) so they run on every push to `main` and every pull request:
 
