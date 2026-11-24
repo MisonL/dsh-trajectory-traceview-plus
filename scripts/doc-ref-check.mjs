@@ -29,7 +29,13 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DOC = join(ROOT, 'docs', 'DESIGN.md');
 const md = readFileSync(DOC, 'utf8');
 
-const sections = new Set([...md.matchAll(/^###\s*(\d+\.\d+)/gm)].map((m) => m[1]));
+// `\s+`, not `\s*`: a section only counts if the `#` run is followed by a space,
+// which is exactly what Markdown itself requires. With `\s*` this script accepted
+// `###13.25` — a line that renders as plain paragraph text — as a live section, so a
+// `§13.25` pointer would resolve here while leading the reader to nothing on GitHub.
+// doc-heading-check.mjs is the guard that fails on such a line; the two now agree on
+// what a section is instead of disagreeing silently.
+const sections = new Set([...md.matchAll(/^###\s+(\d+\.\d+)/gm)].map((m) => m[1]));
 const lines = md.split('\n');
 
 const dangling = [];
