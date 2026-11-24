@@ -36,6 +36,7 @@
 - `scripts/build-client.mjs`
 - `scripts/doc-heading-check.mjs`
 - `scripts/doc-ref-check.mjs`
+- `scripts/guard-check.mjs`
 - `scripts/provenance.mjs`
 - `scripts/readme-numbers.mjs`
 - `scripts/release-status.mjs`

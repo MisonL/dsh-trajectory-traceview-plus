@@ -119,6 +119,7 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 │   ├── doc-heading-check.mjs # 标题必须是合法 Markdown（# 后要有空格）
 │   ├── readme-numbers.mjs # README 里的数字与代码一致（数出来，不手写）
 │   ├── release-status.mjs # 查 tag / Release / npm 元数据 / tarball / @latest 解析（需联网，不进 CI）
+│   ├── guard-check.mjs   # 用已知复杂度验证 P1 性能守卫是否还能分辨线性/二次（测时间，不进 CI）
 │   ├── browser-check.mjs # 真浏览器断言（需 agent-browser）
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md（每处改动的原因）/ PROVENANCE.md（自动生成）
@@ -138,9 +139,15 @@ dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.2
 ```
 
 > **为什么不用 `@latest`**：`dsh plugin` 底层是 pnpm，而 **pnpm 12 有供应链延迟保护**
-> （`minimumReleaseAge`）：太新的版本不会被 `@latest` 选中，pnpm 会**静默退回上一个版本**
-> ——不打任何警告。0.11.0 刚发布时实测 `pnpm add pkg@latest` 装到的是 0.10.0，
-> 而那版本在新宿主上会被跳过。写死版本号就没有这个歧义（冷/热缓存实测都能装到 0.11.0）。
+> （`minimumReleaseAge`，默认 **1440 分钟 = 24 小时**）：发布不满一天的版本不会被
+> `@latest` 选中，pnpm 会**静默退回上一个版本**——不打任何警告。
+> 0.11.0 刚发布时实测 `pnpm add pkg@latest` 装到的是 0.10.0，而那版本在新宿主上会被跳过。
+> 写死版本号就没有这个歧义（冷/热缓存实测都能装到指定版本）。
+>
+> 这个值有一条实测边界：`--config.minimumReleaseAge=300`（5 小时）仍解析到新版本，
+> `1440` 解析回旧版；pnpm v11 起默认就是 `1440`（[官方文档](https://pnpm.io/settings/dependency-resolution#minimumreleaseage)）。
+> 也就是说**别人发版后第一天内，`@latest` 拿到的永远是上一版**——这不是本插件的 bug，
+> 是包管理器的供应链策略。
 >
 > 顺带：本包的 `0.0.0-stage` 那个早期测试版本元数据残缺（缺 `size` 字段），
 > 冷缓存下走 `@latest` 解析时 pnpm 会因此直接失败（`numeric field was not a number`）。

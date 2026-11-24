@@ -116,6 +116,7 @@ dsh-trajectory-traceview-plus/   # repo root (directory name == npm package name
 │   ├── doc-heading-check.mjs # headings must be valid Markdown (space after #)
 │   ├── readme-numbers.mjs # README numbers match the code (computed, not typed)
 │   ├── release-status.mjs # tag / Release / npm metadata / tarball / @latest resolution (network; not in CI)
+│   ├── guard-check.mjs   # feed the P1 growth guard known complexities; does it still tell them apart? (timing; not in CI)
 │   ├── browser-check.mjs # real-browser assertions (needs agent-browser)
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md (why each change) / PROVENANCE.md (generated)
@@ -134,7 +135,9 @@ Install from npm (recommended — **pin the exact version**):
 dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.2
 ```
 
-> **Why not `@latest`**: `dsh plugin` forwards to pnpm, and **pnpm 12 ships a supply-chain delay** (`minimumReleaseAge`): a version that is too new is not selected by `@latest`, and pnpm **silently falls back to the previous release** — no warning at all. Right after 0.11.0 was published, `pnpm add pkg@latest` installed 0.10.0, which the newer DSH hosts skip entirely. An exact version has no such ambiguity (verified with both cold and warm caches).
+> **Why not `@latest`**: `dsh plugin` forwards to pnpm, and **pnpm 12 ships a supply-chain delay** (`minimumReleaseAge`, default **1440 minutes = 24 hours**): a version published less than a day ago is not selected by `@latest`, and pnpm **silently falls back to the previous release** — no warning at all. Right after 0.11.0 was published, `pnpm add pkg@latest` installed 0.10.0, which the newer DSH hosts skip entirely. An exact version has no such ambiguity (verified with both cold and warm caches).
+>
+> The boundary was measured: `--config.minimumReleaseAge=300` (5 h) still resolves the new version, `1440` resolves back to the old one; the default has been `1440` since pnpm v11 ([docs](https://pnpm.io/settings/dependency-resolution#minimumreleaseage)). In other words, **during the first day after anyone publishes, `@latest` hands out the previous release** — that is the package manager's supply-chain policy, not a bug in this plugin.
 >
 > Related: this package's early `0.0.0-stage` has malformed metadata (no `size` field), so resolving `@latest` against a cold cache fails outright (`numeric field was not a number`). Pinning the version avoids that path.
 

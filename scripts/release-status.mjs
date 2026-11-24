@@ -179,6 +179,31 @@ if (resolvedDefault === null || resolvedNoDelay === null) {
 	});
 } else {
 	const held = resolvedDefault !== resolvedNoDelay;
+	// "self-heals" without a number is not information. pnpm's built-in default is
+	// 1440 minutes (24 h) — not the "few hours" an earlier version of this message
+	// implied, which is why the same advisory was still showing 6.2 h after the
+	// publish and looked like a bug. Say how old the release is and when it clears.
+	let window = '';
+	if (held) {
+		// A dotted key like `time.0.11.2` returns empty from npm (digit segments do not
+		// resolve), so read the whole time map and pick the key out of it.
+		// so read the whole time map and pick the key out of it.
+		const times = run('npm', ['view', name, 'time', '--json']);
+		let published = '';
+		try {
+			// `npm view … --json` wraps the object in an array; unwrap before reading the key.
+			const raw = JSON.parse(times.out);
+			const map = Array.isArray(raw) ? raw[0] : raw;
+			published = map?.[version] ?? '';
+		} catch { published = ''; }
+		const t = Date.parse(published);
+		if (Number.isFinite(t)) {
+			const ageH = (Date.now() - t) / 3_600_000;
+			const leftH = Math.max(0, 24 - ageH);
+			window = '; published ' + ageH.toFixed(1) + ' h ago, clears in ~' + leftH.toFixed(1)
+				+ ' h (pnpm default minimumReleaseAge = 1440 min)';
+		}
+	}
 	rows.push({
 		place: 'npm @latest',
 		present: !held,
@@ -186,7 +211,7 @@ if (resolvedDefault === null || resolvedNoDelay === null) {
 		detail: held
 			? 'resolver holds the new release back: @latest → ' + resolvedDefault
 				+ ', with minimumReleaseAge=0 → ' + resolvedNoDelay
-				+ ' (self-heals; pin the version in install docs)'
+				+ window + '; install docs pin the version'
 			: 'resolver reaches ' + resolvedDefault + (resolvedDefault === version ? ' (the current release)' : ''),
 		missing: '',
 	});
@@ -203,7 +228,7 @@ if (absent.length > 0) {
 	for (const r of absent) if (r.missing) console.log('  ' + r.place + ':  ' + r.missing);
 }
 if (advisories.length > 0) {
-	console.log('\n◐ = real but self-healing, does not block:');
+	console.log('\n◐ = real but time-bounded, does not block:');
 	for (const r of advisories) console.log('  ' + r.place + ':  ' + r.detail);
 }
 // ── verdict ──────────────────────────────────────────────────────────────────

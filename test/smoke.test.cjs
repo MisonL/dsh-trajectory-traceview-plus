@@ -805,6 +805,44 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		const onlyEn = [...enKeys].filter((k) => !zhKeys.has(k));
 		if (onlyZh.length > 0) throw new Error("I18N keys only in zh: " + onlyZh.join(", "));
 		if (onlyEn.length > 0) throw new Error("I18N keys only in en: " + onlyEn.join(", "));
+
+		// ── and the reverse: a key nothing can ever ask for ──────────────────
+		//
+		// The checks above only prove "every key the code asks for exists". They say
+		// nothing about keys NOTHING asks for, and that set grew to six unnoticed
+		// (`block.toolsAdded`, `anchor.jump`, …) because removing a feature leaves its
+		// strings behind and nothing complains. Dead keys are not harmless: they are the
+		// part of the locale table a translator has to keep in sync for no reason, and
+		// they make the table look like it covers surfaces it no longer has.
+		//
+		// Counting "used" needs three access shapes, because the table is read three ways:
+		//   1. literal           t("a.b")
+		//   2. variable-passed   const key = "a.b"; … t(key)     ← a plain regex misses it
+		//   3. template          t(`prefix.${x}`) / t(`prefix.${x}Tip`)
+		// Shape 2 is why ANY quoted string that exactly names a key counts as a use: the
+		// only reason that literal exists in this file is to be looked up.
+		//
+		// ...EXCEPT inside the locale tables themselves, where every key is of course
+		// written as a quoted string. Scanning the whole file made rule 2 count each
+		// definition as its own use, so this guard matched every key and could never
+		// report a single dead one — it was green before the six keys were deleted and
+		// green after, which is the same false-green shape as §13.52. Exclude the tables.
+		const outsideTables = src.slice(0, zhS) + src.slice(enEndMark);
+		const reachable = new Set(used);
+		for (const m of outsideTables.matchAll(/"([\w.]+)"/g)) if (zhKeys.has(m[1])) reachable.add(m[1]);
+		for (const m of outsideTables.matchAll(/\b(?:t|cpt|tr)\(\s*`([\w.]*?)\$\{[^}]+\}([\w.]*)`/g)) {
+			const [, pre, post] = m;
+			for (const k of zhKeys) {
+				if (!k.startsWith(pre)) continue;
+				if (post !== "" && !k.slice(pre.length).endsWith(post)) continue;
+				reachable.add(k);
+			}
+		}
+		const deadKeys = [...zhKeys].filter((k) => !reachable.has(k)).sort();
+		if (deadKeys.length > 0) {
+			throw new Error("I18N dead keys (defined, never reachable): " + deadKeys.join(", ")
+				+ " — delete them, or the table claims surfaces the view no longer has");
+		}
 	}
 
 	// ── the pack must not be near-empty for non-step stations ────────────────
@@ -4489,25 +4527,50 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		let bigMs = 0;
 		let ratio = Infinity;
 		const seen = [];
+		const smalls = [];
+		const bigs = [];
 		for (let round = 0; round < 3; round += 1) {
 			const m = measureRound();
 			// A floor that only catches "the fold is literally free", which would make the
 			// ratio meaningless no matter how many repeats we add. `cpuMsOf` already
 			// raises the work per sample, so this should not fire on a fast machine.
 			if (m.small < 0.05) throw new Error("P1 the small fixture folded in " + m.small.toFixed(3) + " ms per call after repeats — too fast to measure a ratio");
+			smalls.push(m.small);
+			bigs.push(m.big);
 			seen.push(m.big / m.small);
-			if (m.big / m.small < ratio) {
-				smallMs = m.small;
-				bigMs = m.big;
-				ratio = m.big / m.small;
-			}
 		}
+		// Take the minimum of EACH size independently, then divide.
+		//
+		// The previous version took the minimum of the three per-round RATIOS, which
+		// couples the two measurements. That is not just imprecise, it is one-sided in
+		// the WRONG direction: a round where the small sample happened to be inflated
+		// and the big one was clean produces a LOW ratio, and taking the minimum keeps
+		// exactly that round. Measured on the real fixture here: rounds 2.98 / 1.10 /
+		// 2.19 → reported 1.10, and another run reported 0.83 — a ratio below 1, which
+		// is impossible for a cost function that grows with input.
+		//
+		// That bias makes the guard blind rather than noisy. Simulated with a known
+		// O(n^2) under 2x one-sided jitter, 20 trials, threshold 3.0:
+		//     min-of-ratios  missed the quadratic 12/20
+		//     min/min          missed the quadratic  3/20
+		// A 60% false-negative rate explains why injecting a real quadratic into the
+		// fold did not turn this test red on earlier attempts.
+		//
+		// Noise is one-sided (it inflates a duration, never shortens it), so the minimum
+		// over 3 rounds x 5 samples estimates the TRUE cost of each size. Dividing the
+		// two true costs is the quantity this test means to assert. A real O(n^2) still
+		// shows ~4.0, because both minima are then genuinely 4x apart.
+		const smallMs2 = Math.min(...smalls);
+		const bigMs2 = Math.min(...bigs);
+		smallMs = smallMs2;
+		bigMs = bigMs2;
+		ratio = bigMs2 / smallMs2;
 		// Linear ≈2.0 (measured 1.6–2.0). Quadratic ≈4.0. 3.0 leaves room for
 		// measurement noise while still failing a real O(n^2) blow-up.
 		if (ratio > 3) {
-			throw new Error("P1 projection scales worse than linear in EVERY one of 3 rounds: " + half.length + " nodes " + smallMs.toFixed(1)
-				+ " ms -> " + big.length + " nodes " + bigMs.toFixed(1) + " ms (best ratio " + ratio.toFixed(2)
-				+ ", all rounds " + seen.map((r) => r.toFixed(2)).join(" / ") + "; linear ~2, quadratic ~4)");
+			throw new Error("P1 projection scales worse than linear: " + half.length + " nodes " + smallMs.toFixed(1)
+				+ " ms -> " + big.length + " nodes " + bigMs.toFixed(1) + " ms (ratio of best samples " + ratio.toFixed(2)
+				+ ", per-round " + seen.map((r) => r.toFixed(2)).join(" / ") + "; linear ~2, quadratic ~4)");
 		}
 		// Keep a VERY loose absolute ceiling as a second net: it must catch a catastrophic
 		// blow-up (seconds, not milliseconds) without flapping on a loaded machine.
