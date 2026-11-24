@@ -4421,18 +4421,44 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		// double the cost (linear), not quadruple it (accidental O(n²)). That ratio is
 		// a property of the code and holds regardless of how loaded the machine is.
 		// Measured here: 4,500 -> 9,000 nodes = 1.60x, 9,000 -> 18,000 = 1.97x.
-		const cpuMsOf = (snap) => {
-			// Warm-up: earlier perf cases leave garbage that one pass does not settle.
-			for (let w = 0; w < 3; w += 1) deriveTraceTree(snap, t);
+		//
+		// WHY THIS REPEATS (2026-11-24). Best-of-7 single calls STILL flaked on CI:
+		// `3100 nodes 6.0 ms -> 6200 nodes 22.0 ms (ratio 3.66)` — a red build on code
+		// that had not regressed, and locally the same check measured 25 ms -> 49 ms
+		// (ratio 1.89-2.00) four runs in a row. The giveaway is the ABSOLUTE time: the
+		// ratio got worse exactly where the samples got shorter. A 6 ms sample is a few
+		// JIT tiers and one scheduler slice; dividing two of them amplifies noise. A
+		// ratio is only meaningful when both samples are well above the timer floor.
+		//
+		// So each sample now runs the fold `reps` times and divides — the work per
+		// sample is raised until it is ~15 ms, which makes the number stable on a fast
+		// machine instead of noisier. `reps` is identical for both sizes, so the ratio
+		// still compares like with like.
+		const MIN_SAMPLE_MS = 15;
+		const callMs = (snap, reps) => {
 			let best = Infinity;
-			for (let i = 0; i < 7; i += 1) {
+			for (let i = 0; i < 5; i += 1) {
 				const before = process.cpuUsage();
-				deriveTraceTree(snap, t);
+				for (let r = 0; r < reps; r += 1) deriveTraceTree(snap, t);
 				const used = process.cpuUsage(before);
-				const ms = (used.user + used.system) / 1000;
+				const ms = (used.user + used.system) / 1000 / reps;
 				if (ms < best) best = ms;
 			}
 			return best;
+		};
+		const cpuMsOf = (snap) => {
+			// Warm-up: earlier perf cases leave garbage that one pass does not settle.
+			for (let w = 0; w < 3; w += 1) deriveTraceTree(snap, t);
+			// Grow `reps` until one sample covers enough real work to measure. Bounded so
+			// a very fast machine still terminates; the cap is generous because the whole
+			// point is to stop asserting on sub-millisecond differences.
+			let reps = 1;
+			let ms = callMs(snap, reps);
+			while (ms * reps < MIN_SAMPLE_MS && reps < 64) {
+				reps *= 2;
+				ms = callMs(snap, reps);
+			}
+			return ms;
 		};
 		const half = [];
 		{
@@ -4452,29 +4478,36 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 			small: cpuMsOf({ eventNodes: half, requests: [], callSchemas: new Map(), runningCalls: [], partial: null }),
 			big: cpuMsOf({ eventNodes: big, requests: [], callSchemas: new Map(), runningCalls: [], partial: null })
 		});
-		// TWO independent rounds, pass if EITHER lands under the ceiling. A single round
-		// flaked at3.01 on a machine that was also running a browser host and a codex
-		// reviewer (5/5 clean once idle), and a one-sample timing assertion that flips on
-		// an idle-vs-busy difference is a false alarm, not a regression. A real O(n^2)
-		// blow-up is deterministic, so it fails BOTH rounds and is still caught.
-		let smallMs =0;
-		let bigMs =0;
+		// Three rounds; assert on the SMALLEST ratio. Noise can only make a measurement
+		// look worse (a scheduling hiccup inflates the numerator, never shrinks it), so
+		// the minimum is the estimate of the true ratio — and a real O(n^2) blow-up
+		// inflates every round, so taking the min still catches it. The old rule was
+		// "fail if both of two rounds exceed the ceiling", which turned one unlucky
+		// sample into a red build; this one needs all three rounds to disagree with the
+		// code's actual shape.
+		let smallMs = 0;
+		let bigMs = 0;
 		let ratio = Infinity;
-		for (let round =0; round <2; round +=1) {
+		const seen = [];
+		for (let round = 0; round < 3; round += 1) {
 			const m = measureRound();
-			smallMs = m.small;
-			bigMs = m.big;
-			// Guard the measurement itself: if the small case is too fast to time reliably,
-			// the ratio is noise and asserting on it would be a false signal.
-			if (smallMs <3) throw new Error("P1 the small fixture folded in " + smallMs.toFixed(2) + " ms — too fast to measure a ratio");
-			ratio = bigMs / smallMs;
-			if (ratio <=3) break;
+			// A floor that only catches "the fold is literally free", which would make the
+			// ratio meaningless no matter how many repeats we add. `cpuMsOf` already
+			// raises the work per sample, so this should not fire on a fast machine.
+			if (m.small < 0.05) throw new Error("P1 the small fixture folded in " + m.small.toFixed(3) + " ms per call after repeats — too fast to measure a ratio");
+			seen.push(m.big / m.small);
+			if (m.big / m.small < ratio) {
+				smallMs = m.small;
+				bigMs = m.big;
+				ratio = m.big / m.small;
+			}
 		}
-		// Linear ≈2.0 (measured1.6–2.0). Quadratic ≈4.0.3.0 leaves room for
+		// Linear ≈2.0 (measured 1.6–2.0). Quadratic ≈4.0. 3.0 leaves room for
 		// measurement noise while still failing a real O(n^2) blow-up.
-		if (ratio >3) {
-			throw new Error("P1 projection scales worse than linear in BOTH rounds: " + half.length + " nodes " + smallMs.toFixed(1)
-				+ " ms -> " + big.length + " nodes " + bigMs.toFixed(1) + " ms (ratio " + ratio.toFixed(2) + ", linear ~2, quadratic ~4)");
+		if (ratio > 3) {
+			throw new Error("P1 projection scales worse than linear in EVERY one of 3 rounds: " + half.length + " nodes " + smallMs.toFixed(1)
+				+ " ms -> " + big.length + " nodes " + bigMs.toFixed(1) + " ms (best ratio " + ratio.toFixed(2)
+				+ ", all rounds " + seen.map((r) => r.toFixed(2)).join(" / ") + "; linear ~2, quadratic ~4)");
 		}
 		// Keep a VERY loose absolute ceiling as a second net: it must catch a catastrophic
 		// blow-up (seconds, not milliseconds) without flapping on a loaded machine.
