@@ -88,10 +88,48 @@ for (const file of ['README.md', 'README.en.md']) {
 	});
 }
 
+// ── the `npm run check` comment must enumerate the steps that are really there ──
+//
+// The count check above ("7 步") caught the number but not the LIST. Both READMEs
+// said `npm run check  # build --check + version-check + smoke` long after the
+// command had grown to seven steps — the number was right three lines further down
+// while the comment beside the command was three versions out of date. A reader who
+// trusts the comment would skip provenance, both doc gates and the numbers gate.
+//
+// So: every `node scripts/<name>.mjs --check` in the command must appear in the
+// comment, and the comment must not name a script that is not in the command.
+const checkScripts = [...pkg.scripts.check.matchAll(/node (scripts\/[\w.-]+\.mjs|test\/[\w.-]+\.cjs)/g)]
+	.map((m) => m[1]);
+let listChecked = 0;
+for (const file of ['README.md', 'README.en.md']) {
+	const lines = read(file).split('\n');
+	lines.forEach((line, i) => {
+		if (!/^\s*npm run check\b/.test(line)) return;
+		listChecked += 1;
+		// The comment may continue on the next line (it is long); join both.
+		const block = line + ' ' + (lines[i + 1] ?? '');
+		for (const script of checkScripts) {
+			// Normalize to the word the prose uses: `scripts/build-client.mjs` -> `build-client`,
+			// `test/smoke.test.cjs` -> `smoke` (the `.test` infix is not spoken).
+			const short = script
+				.replace(/^scripts\//, '').replace(/^test\//, '')
+				.replace(/\.mjs$/, '').replace(/\.test\.cjs$/, '').replace(/\.cjs$/, '');
+			// `build-client.mjs` is written `build --check` in prose; accept either form.
+			const alias = short === 'build-client' ? /build(?: --check)?/ : null;
+			const present = alias !== null ? alias.test(block) : block.includes(short);
+			if (!present) problems.push(file + ':' + (i + 1) + ' — `npm run check` list omits ' + script);
+		}
+	});
+}
+
+// ── the `--shell` blocks that show a Windows-only path are fine; but a line that
+// claims how many steps run locally must also name them. Guarded by the count above.
+
 const total = Object.values(counted).reduce((a, b) => a + b, 0);
-if (total === 0) {
+if (total === 0 || listChecked === 0) {
 	// A gate that matches nothing is worse than no gate: it reports success forever.
-	console.error('readme-numbers: found NO numeric claim to check — the patterns have drifted from the prose');
+	console.error('readme-numbers: found NO claim to check (numbers ' + total + ', `npm run check` lines '
+		+ listChecked + ') — the patterns have drifted from the prose');
 	process.exit(1);
 }
 

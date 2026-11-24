@@ -222,7 +222,8 @@ node scripts/provenance.mjs
 Editing `src/` without rebuilding makes `--check` fail and the smoke suite report `BUILD1`. `lib/index.js` (host half) is a no-op stub; `lib/client.js` is a classic script (`window.__ModuleLoader__.load`) served directly by the client module system.
 
 ```powershell
-npm run check              # build --check + version-check + smoke (enough for a commit)
+npm run check              # 7 steps: build --check / provenance --check / version-check
+                           #          doc-ref-check / doc-heading-check / smoke / readme-numbers
 npm test                   # smoke only
 ```
 

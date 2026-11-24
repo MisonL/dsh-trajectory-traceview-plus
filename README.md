@@ -225,7 +225,8 @@ node scripts/provenance.mjs
 改了 `src/`却忘了重建时，`--check`会失败，`test/smoke.test.cjs`也会报 `BUILD1`。`lib/index.js`（宿主半部）是无操作桩；`lib/client.js`是经典脚本（`window.__ModuleLoader__.load`），由客户端模块系统直接服务。
 
 ```powershell
-npm run check              # build --check + version-check + smoke（日常提交够用）
+npm run check              # 7 步：build --check / provenance --check / version-check
+                           #       doc-ref-check / doc-heading-check / smoke / readme-numbers
 npm test                   # 只跑 smoke
 ```
 
