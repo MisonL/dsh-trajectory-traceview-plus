@@ -32,6 +32,7 @@ const namedSteps = [...wf.matchAll(/^\s+- name: (.+)$/gm)].map((m) => m[1]);
 const ciGates = namedSteps.filter((n) => n !== 'Install').length;
 
 const pkg = JSON.parse(read('package.json'));
+const version = String(pkg.version);
 const localSteps = pkg.scripts.check.split('&&').map((s) => s.trim()).filter(Boolean).length;
 
 const probe = read('test/browser/probe.js');
@@ -183,16 +184,41 @@ for (const file of ['README.md', 'README.en.md']) {
 	}
 }
 
+// ── the version written into the install commands ────────────────────────────
+//
+// The README now teaches an exact pin (`…@0.11.1`) and a tag-pinned GitHub spec
+// (`github:…#v0.11.1`), because `@latest` is unreliable here (pnpm's release-age
+// policy) and an unpinned `github:` follows the branch HEAD (§13.49). That makes the
+// version appear in the place a user copies FIRST — and it silently goes stale on the
+// next release. So gate it: every `dsh-trajectory-traceview-plus@X.Y.Z` and every
+// `#vX.Y.Z` in the READMEs must equal package.json's version.
+//
+// Deliberately only these two shapes: prose that mentions an older version on
+// purpose ("0.11.0 shipped a wrong README") must stay writable.
+let versionRefs = 0;
+for (const file of ['README.md', 'README.en.md']) {
+	read(file).split('\n').forEach((line, i) => {
+		for (const m of line.matchAll(/dsh-trajectory-traceview-plus@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/g)) {
+			versionRefs += 1;
+			if (m[1] !== version) problems.push(file + ':' + (i + 1) + ' — install command pins ' + m[1] + ', package.json says ' + version);
+		}
+		for (const m of line.matchAll(/#v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/g)) {
+			versionRefs += 1;
+			if (m[1] !== version) problems.push(file + ':' + (i + 1) + ' — tag spec pins v' + m[1] + ', package.json says ' + version);
+		}
+	});
+}
+
 const total = Object.values(counted).reduce((a, b) => a + b, 0);
-if (total === 0 || listChecked === 0) {
+if (total === 0 || listChecked === 0 || versionRefs === 0) {
 	// A gate that matches nothing is worse than no gate: it reports success forever.
 	console.error('readme-numbers: found NO claim to check (numbers ' + total + ', `npm run check` lines '
-		+ listChecked + ') — the patterns have drifted from the prose');
+		+ listChecked + ', version refs ' + versionRefs + ') — the patterns have drifted from the prose');
 	process.exit(1);
 }
 
 console.log('readme-numbers: 核对 ' + total + ' 处数字（门禁 ' + ciGates + ' / 本地 ' + localSteps
-	+ ' / 观测组 ' + truth.groups + ' / 断言 ' + assertions + '）');
+	+ ' / 观测组 ' + truth.groups + ' / 断言 ' + assertions + '）+ ' + versionRefs + ' 处版本引用');
 if (problems.length > 0) {
 	for (const p of problems) console.error('  ✗ ' + p);
 	console.error('readme-numbers: FAIL (' + problems.length + ' 处不一致)');
