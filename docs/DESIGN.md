@@ -7795,3 +7795,78 @@ commit → push → tag → push tag → GitHub Release」，**漏掉了唯一�
    没有下一个门禁，所以它自己必须被写进清单。
 3. 我给出的技术断言没有实测就说了，而且是**确定语气**。`file:` 的两种形式行为
    不同，我拿一种的行为去描述另一种。对方实测才发现——这次是运气，不是严谨。
+
+
+### 13.48 发布过程本身暴露的三件事（2026-11-24）
+
+用户批准后执行了 `npm publish`。过程里撞到三个值得记的东西。
+
+#### 一、`npm publish` 打印成功，registry 却还没有
+
+```
++ dsh-trajectory-traceview-plus@0.11.0
+```
+
+紧接着查询：`versions: 0.0.0-stage, 0.10.0`，`dist-tags.latest` 仍是 `0.10.0`。
+**看起来像失败。** 连 `curl` 直连 registry 也一样。
+
+真相在 packument 的 `time` 字段里：
+
+```json
+"0.11.0": "2026-11-24T04:33:54.570Z",
+"modified": "2026-11-24T04:33:54.733Z"
+```
+
+发布时间已经写入，只是 `versions` 对象和 `dist-tags` 还在 CDN 复制中。等了约
+一分钟，三处全部就位。
+
+**教训**：注册表的"写入成功"和"读到新值"之间有真实延迟，而延迟期内的读取结果
+**和"发布失败"长得一模一样**。差点因为一次过早的复查就重新发布（第二次会因
+版本已存在而失败，然后我可能误判成权限问题）。
+
+正确的确认方式是查 `time` 字段——它是写入即生效的，不像 `versions` 走 CDN。
+
+#### 二、本机 web profile 用的是软链，验证不到"发布出来的包"
+
+本机 `~/.dsh/profiles/web/node_modules/dsh-trajectory-traceview-plus` 指向源码仓。
+所以此前所有"真机实跑"验证的都是**工作区源码**，不是 registry 上的 tarball。
+
+于是补了两件事：
+
+1. `npm pack dsh-trajectory-traceview-plus@0.11.0` 解包后与仓库**逐文件比 sha256**，
+   27 个文件全部相同（含 `lib/client.js`、`package.json`、`src/`、两份 README）。
+   既然包内容 == 已验证的源码，那些实跑结论就可以迁移过来，不需要重跑浏览器。
+2. 另起一个隔离 `DSH_HOME`，用真实 npm 安装路径装 0.11.0，
+   `dsh --profile web --dump-config` **0 条 skip**，插件行进入组合树。
+
+隔离 profile 里没有会话数据，所以顺带确认了一件边界事：**"能加载"和"能渲染"是两个
+不同的证据**，前者由 `dump-config` 给，后者只有真实会话能给。两者都拿到才算验证
+完整——这次前者在隔离环境拿到，后者在原环境（同一份源码）拿到，中间由 sha256 相等
+把两段证据接起来。
+
+#### 三、`npm deprecate` 比 `unpublish` 更适合"旧版有坑"
+
+`0.10.0` 并非全坏——它只在 `dsh > 0.2.2-rc.2` 上被跳过，在 rc.2 上工作正常。
+所以没有 unpublish（那会破坏已经锁版本的用户，且有 72 小时窗口限制），而是给
+`0.10.0` 挂了 deprecation：
+
+```
+Superseded by 0.11.0. This version pins engines.dsh to =0.2.2-rc.2, so DSH skips it
+on 0.2.2-rc.3 and later (the whole tab disappears). Upgrade with: dsh plugin --profile
+web add dsh-trajectory-traceview-plus@latest
+```
+
+实测用户装 0.10.0 时 npm 会打印 `npm warn deprecated …`，提示里**直接带修复命令**。
+
+**教训**：坏版本的正确处理不是抹掉，是**让下游在踩到时立刻知道原因和解法**。
+`unpublish` 让痕迹消失，`deprecate` 把知识留在现场。
+
+#### 事后状态
+
+```
+git tag         ● v0.11.0
+GitHub Release  ● v0.11.0（徽章正常）
+npm registry    ● 0.11.0 = latest；0.10.0 已 deprecate
+```
+
+`node scripts/release-status.mjs` → `consistent everywhere`。
