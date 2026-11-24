@@ -118,6 +118,7 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 │   ├── doc-ref-check.mjs # docs/DESIGN.md 的 §x.y 引用不断链
 │   ├── doc-heading-check.mjs # 标题必须是合法 Markdown（# 后要有空格）
 │   ├── readme-numbers.mjs # README 里的数字与代码一致（数出来，不手写）
+│   ├── release-status.mjs # 查 tag / GitHub Release / npm 三处是否都有这一版（需联网，不进 CI）
 │   ├── browser-check.mjs # 真浏览器断言（需 agent-browser）
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md（每处改动的原因）/ PROVENANCE.md（自动生成）
@@ -293,9 +294,28 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 
 `0.x` 阶段：`engines.dsh` 区间只覆盖当前 minor，跨 minor 仍需跟版——这仍是版本号跳得快的原因之一，不是功能膨胀。
 
-**发布动作**：改版本号 → 更新 `CHANGELOG.md` → 跑 `node scripts/provenance.mjs` 刷新来源清单 → 打 tag（`git tag -a v0.11.0`）→ **建 GitHub Release**（`gh release create v0.11.0 --notes-file …`）。
+**发布动作**是一套命令，一步都不能跳（§13.47 记了漏掉 `npm publish` 的后果）：
 
-最后一步不是仪式：页面顶部的版本徽章读的是 GitHub **Release**，不是 tag。只打 tag 不建 Release 时徽章会显示红色的 `no releases`——看起来像这个仓已经废弃。
+```powershell
+# 1-3 改内容
+#   改 package.json 的 version、补 CHANGELOG.md 的版本条目
+node scripts/provenance.mjs              # 4. 刷新来源清单（新增/改名文件后必须重跑）
+npm run check                            # 5. 7 步门禁，全绿再往下
+git add -A; git commit -m "..."          # 6.
+git push origin main                     # 7.
+git tag -a v0.11.0 -m "..."              # 8.
+git push origin v0.11.0                  # 9.
+npm publish                              # 10. 触发 prepublishOnly → 再跑一遍 check
+gh release create v0.11.0 --notes-file … # 11. 徽章读的是 Release，不是 tag
+
+node scripts/release-status.mjs          # 12. 三处对齐了吗？（tag / Release / npm）
+```
+
+**第 10 步最容易漏，而且不会有任何报错**：`git push` + `git tag` 之后仓库看起来"发布完了"，但 registry 上还是旧版本。任何人 `npm i <包名>@latest` 拿到的都是旧包。这个仓就发生过一次——tag 和 Release 都在，npm 还停在上一版（§13.47）。
+
+**第 11 步不是仪式**：页面顶部的版本徽章读的是 GitHub **Release**，不是 tag。只打 tag 不建 Release 时徽章会显示红色的 `no releases`——看起来像这个仓已经废弃（§13.45）。
+
+版本一致性有测试守着：
 
 - `docs/PROVENANCE.md` 过期 → 冒烟测试直接失败（`V1`）
 - 版本号与 tag 不一致 → `node scripts/version-check.mjs` 直接失败（`F1`）

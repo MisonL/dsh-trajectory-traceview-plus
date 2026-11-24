@@ -38,6 +38,7 @@
 - `scripts/doc-ref-check.mjs`
 - `scripts/provenance.mjs`
 - `scripts/readme-numbers.mjs`
+- `scripts/release-status.mjs`
 - `scripts/version-check.mjs`
 - `src/00-locale.js`
 - `src/10-styles.js`

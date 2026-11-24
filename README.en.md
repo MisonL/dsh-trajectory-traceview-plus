@@ -115,6 +115,7 @@ dsh-trajectory-traceview-plus/   # repo root (directory name == npm package name
 │   ├── doc-ref-check.mjs # DESIGN.md §x.y references resolve
 │   ├── doc-heading-check.mjs # headings must be valid Markdown (space after #)
 │   ├── readme-numbers.mjs # README numbers match the code (computed, not typed)
+│   ├── release-status.mjs # are tag / GitHub Release / npm all on this version? (network; not in CI)
 │   ├── browser-check.mjs # real-browser assertions (needs agent-browser)
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md (why each change) / PROVENANCE.md (generated)
@@ -286,9 +287,25 @@ Substantive changes versus upstream: stable anchors and deep-link parsing, orpha
 
 `engines.dsh` covers only the current minor, so a host minor bump still requires a matching plugin release. That is one reason the number moves fastest — it is not feature bloat.
 
-**Release steps**: bump the version → update `CHANGELOG.md` → run `node scripts/provenance.mjs` → tag it (`git tag -a v0.11.0`) → **create a GitHub Release** (`gh release create v0.11.0 --notes-file …`).
+**Release steps** — every one of them, in order (skipping `npm publish` is what §13.47 records):
 
-That last step is not ceremony: the version badge at the top of the page reads the GitHub **Release**, not the tag. Tagging without creating a Release makes the badge show a red `no releases`, which reads as an abandoned repo.
+```bash
+# 1-3 edit files: package.json version, CHANGELOG.md entry
+node scripts/provenance.mjs              # 4. refresh the provenance list (rerun after any add/rename)
+npm run check                            # 5. the 7 local gates; all green before going further
+git add -A; git commit -m "..."          # 6.
+git push origin main                     # 7.
+git tag -a v0.11.0 -m "..."              # 8.
+git push origin v0.11.0                  # 9.
+npm publish                              # 10. runs prepublishOnly -> the whole check again
+gh release create v0.11.0 --notes-file … # 11. the badge reads the Release, not the tag
+
+node scripts/release-status.mjs          # 12. do all three agree? (tag / Release / npm)
+```
+
+**Step 10 is the easiest to miss and it fails silently.** After `git push` and `git tag` the repo looks "released" — but the registry still serves the old version, so `npm i <name>@latest` hands people the old package. That happened here once: tag and Release both present, npm still on the previous release (§13.47).
+
+**Step 11 is not ceremony**: the version badge at the top of the page reads the GitHub **Release**, not the tag. Tagging without creating a Release makes the badge show a red `no releases`, which reads as an abandoned repo (§13.45).
 
 Three things guard the release, and all live in CI (`.github/workflows/check.yml`) so they run on every push to `main` and every pull request:
 

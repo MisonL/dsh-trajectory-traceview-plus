@@ -96,34 +96,48 @@ for (const file of ['README.md', 'README.en.md']) {
 // while the comment beside the command was three versions out of date. A reader who
 // trusts the comment would skip provenance, both doc gates and the numbers gate.
 //
-// So: every `node scripts/<name>.mjs --check` in the command must appear in the
-// comment, and the comment must not name a script that is not in the command.
+// Scope: this fires on a line that *attempts an enumeration* — one whose comment
+// names at least one real step. A bare `npm run check  # 5. run the gates` in the
+// release ritual makes no claim about WHICH steps, so demanding all seven there
+// would be this gate inventing a rule the prose never stated. The second half of the
+// guard keeps that from becoming an escape hatch: each README must still contain at
+// least one real enumeration.
 const checkScripts = [...pkg.scripts.check.matchAll(/node (scripts\/[\w.-]+\.mjs|test\/[\w.-]+\.cjs)/g)]
 	.map((m) => m[1]);
+// Normalize to the word the prose uses: `scripts/build-client.mjs` -> `build-client`,
+// `test/smoke.test.cjs` -> `smoke` (the `.test` infix is not spoken).
+const shortOf = (script) => script
+	.replace(/^scripts\//, '').replace(/^test\//, '')
+	.replace(/\.mjs$/, '').replace(/\.test\.cjs$/, '').replace(/\.cjs$/, '');
+const aliasOf = (short) => (short === 'build-client' ? /build(?: --check)?/ : null);
+const names = (block, script) => {
+	const alias = aliasOf(shortOf(script));
+	return alias !== null ? alias.test(block) : block.includes(shortOf(script));
+};
+
 let listChecked = 0;
 for (const file of ['README.md', 'README.en.md']) {
+	let enumerations = 0;
 	const lines = read(file).split('\n');
 	lines.forEach((line, i) => {
-		if (!/^\s*npm run check\b/.test(line)) return;
+		// Matches the code-block comment AND the prose enumeration (the 'local `npm run
+		// check` runs 7 of them (...)' sentence). The historical staleness happened in the
+		// code block, but the prose copy makes the same claim and drifts the same way.
+		if (!/npm run check\b/.test(line)) return;
 		listChecked += 1;
 		// The comment may continue on the next line (it is long); join both.
 		const block = line + ' ' + (lines[i + 1] ?? '');
+		// Does this line attempt an enumeration at all?
+		if (!checkScripts.some((s) => names(block, s))) return;
+		enumerations += 1;
 		for (const script of checkScripts) {
-			// Normalize to the word the prose uses: `scripts/build-client.mjs` -> `build-client`,
-			// `test/smoke.test.cjs` -> `smoke` (the `.test` infix is not spoken).
-			const short = script
-				.replace(/^scripts\//, '').replace(/^test\//, '')
-				.replace(/\.mjs$/, '').replace(/\.test\.cjs$/, '').replace(/\.cjs$/, '');
-			// `build-client.mjs` is written `build --check` in prose; accept either form.
-			const alias = short === 'build-client' ? /build(?: --check)?/ : null;
-			const present = alias !== null ? alias.test(block) : block.includes(short);
-			if (!present) problems.push(file + ':' + (i + 1) + ' — `npm run check` list omits ' + script);
+			if (!names(block, script)) problems.push(file + ':' + (i + 1) + ' — `npm run check` list omits ' + script);
 		}
 	});
+	if (enumerations === 0) {
+		problems.push(file + ' — no `npm run check` line enumerates the steps any more; the guard has nothing to check');
+	}
 }
-
-// ── the `--shell` blocks that show a Windows-only path are fine; but a line that
-// claims how many steps run locally must also name them. Guarded by the count above.
 
 const total = Object.values(counted).reduce((a, b) => a + b, 0);
 if (total === 0 || listChecked === 0) {
