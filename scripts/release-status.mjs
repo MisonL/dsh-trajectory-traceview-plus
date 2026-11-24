@@ -102,15 +102,34 @@ rows.push({
 });
 
 // 4. npm registry — what `npm i <name>@latest` installs.
+//
+// Two separate facts, because they failed separately: the VERSION being present in
+// the packument (metadata) and the TARBALL being downloadable (bytes). Right after
+// 0.11.1's publish, `versions` and `dist-tags.latest` both said 0.11.1 while
+// `…/dsh-trajectory-traceview-plus-0.11.1.tgz` returned HTTP 404 for ~2 minutes —
+// so `dsh plugin add pkg@0.11.1` failed with "Tarball server returned HTTP 404"
+// while every metadata check looked perfect. `npm view <pkg>@<v> version` cannot
+// see that; only fetching the URL can.
 const npmView = run('npm', ['view', name + '@' + version, 'version']);
 const latest = run('npm', ['view', name, 'dist-tags.latest']);
+const published = npmView.ok && npmView.out.includes(version);
+let tarballState = 'not checked';
+if (published) {
+	const url = run('npm', ['view', name + '@' + version, 'dist.tarball']).out;
+	// HEAD, no cache-buster: a cache-buster would defeat the very cache that is stale,
+	// hiding exactly the window a real installer would fall into.
+	const code = run('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-I', url]).out;
+	tarballState = code === '200' ? 'tarball downloads' : 'tarball URL returns HTTP ' + code + ' (metadata is live, bytes are not)';
+}
 rows.push({
 	place: 'npm registry',
-	present: npmView.ok && npmView.out.includes(version),
-	detail: npmView.ok && npmView.out.includes(version)
-		? 'published' + (latest.ok ? ' (dist-tags.latest = ' + latest.out + ')' : '')
-		: 'MISSING — `npm i ' + name + '@latest` still installs ' + (latest.ok ? latest.out : '(unknown)'),
-	missing: 'npm publish',
+	present: published && tarballState === 'tarball downloads',
+	detail: !published
+		? 'MISSING — `npm i ' + name + '@latest` still installs ' + (latest.ok ? latest.out : '(unknown)')
+		: 'published' + (latest.ok ? ' (dist-tags.latest = ' + latest.out + ')' : '') + ', ' + tarballState,
+	missing: published && tarballState !== 'tarball downloads'
+		? 'wait for the CDN (a few minutes) then re-check; `npm view` is not enough'
+		: 'npm publish',
 });
 
 const pad = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].length));
@@ -122,7 +141,12 @@ if (absent.length > 0) {
 	for (const r of absent) if (r.missing) console.log('  ' + r.place + ':  ' + r.missing);
 }
 if (absent.some((r) => r.place === 'npm registry')) {
-	const msg = 'release-status: ' + version + ' is tagged but NOT on npm — anyone installing by package name gets the old version';
+	// Two very different causes read the same to a user ("install fails"), so the
+	// message has to name which one it is.
+	const msg = !published
+		? 'release-status: ' + version + ' is tagged but NOT on npm — anyone installing by package name gets the old version'
+		: 'release-status: ' + version + ' is in the npm packument but its tarball is not downloadable yet — `dsh plugin add` will fail with HTTP ' +
+			'rather than install something wrong. Wait for the CDN, then re-run.';
 	if (WARN_ONLY) console.log('\n' + msg + ' (warn only)');
 	else {
 		console.error('\n' + msg);

@@ -8054,3 +8054,89 @@ const isClaimed = (idx) => claimedSpans.some(([s, e]) => idx >= s && idx < e);
 3. 门禁报错时优先怀疑门禁。这已经是第三次（§13.37、§13.44、本节），而且三次都是
    同一个形状：**具体写法被通用规则误伤**。这次终于把「规则优先级」变成了显式机制，
    而不是每次都去改正则躲。
+
+
+### 13.51 元数据已发布，tarball 却 404（2026-11-24）
+
+#### 现象
+
+`npm publish` 0.11.1 成功，`time` 字段写入，`versions` 里有 0.11.1，
+`dist-tags.latest` 指向 0.11.1。然后按自己 README 里那条命令装：
+
+```
+dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.1
+× adding a new package
+╰─▶ Tarball server returned HTTP 404 for
+    https://registry.npmjs.org/dsh-trajectory-traceview-plus/-/dsh-trajectory-traceview-plus-0.11.1.tgz
+```
+
+**所有元数据检查都通过，实际安装失败。**
+
+#### 这是「发布」的第 4 个外部环节
+
+§13.47 记了 `npm publish` 是叶子步骤（漏了没报错）；
+§13.48 记了 registry 写入后 CDN 有延迟（`versions` 会滞后）；
+§13.49 记了包管理器可能出于安全策略不选新版本（`@latest` 静默退回）。
+
+这次是**第 4 个**：metadata 与 tarball 是两条独立的分发路径。
+
+| 检查方式 | 0.11.1 发布后 2 分钟内 |
+|---|---|
+| `npm view <pkg>@0.11.1 version` | ✓ `0.11.1` |
+| packument `versions` / `dist-tags` | ✓ 都对 |
+| packument `time["0.11.1"]` | ✓ 已写入 |
+| `dist.shasum` / `integrity` / `fileCount` | ✓ 都在 |
+| **`HEAD <dist.tarball>`** | **✗ HTTP 404** |
+| **`dsh plugin add <pkg>@0.11.1`** | **✗ 失败** |
+
+而且 404 不是权限问题——加个 cache-buster 立刻 200：
+
+```
+HEAD ...-0.11.1.tgz            → 404
+HEAD ...-0.11.1.tgz?x=12345    → 200
+```
+
+**是 CDN 把一个 404 缓存住了。** 也就是说：真实安装器命中的那个 URL 上有负缓存，
+而换一个 URL（带参数）就能拿到正确的字节（shasum 与 registry 声明一致）。
+
+#### 为什么这个特别难想到
+
+`npm view` 是这个生态里"检查是否发布成功"的标准姿势，我刚在 §13.48 里还教了
+用 `time` 字段确认。但 `npm view` **只读元数据，从不下载 tarball**——它对这个
+窗口完全失明。
+
+**正确的判据是 HEAD 一次 `dist.tarball`**，而这一点只有真的去装一次才会暴露。
+这已经是这一轮第三次「只有真的装一次才知道」了（§13.47 npm 没发、§13.49
+`@latest` 静默降级、本节 tarball 404）。
+
+#### 修法
+
+`release-status.mjs` 的 npm 行拆成两个事实：
+
+```js
+const published = npmView.ok && npmView.out.includes(version);
+// HEAD the tarball URL, NO cache-buster: a cache-buster would defeat the very cache
+// that is stale, hiding exactly the window a real installer falls into.
+const code = run('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-I', url]).out;
+```
+
+输出变成 `published (dist-tags.latest = 0.11.1), tarball downloads`。失败时
+**区分两种原因**，因为用户看到的都是"装不上"：
+
+- 元数据不在 → 「tagged but NOT on npm」
+- 元数据在、tarball 404 → 「in the packument but its tarball is not downloadable yet
+  — `dsh plugin add` will fail with HTTP rather than install something wrong. Wait
+  for the CDN」
+
+第二条里那句「rather than install something wrong」是有意的：**这个失败模式是安全
+的**——装不上，而不是装错。负缓存比"装到错误版本"好得多。
+
+#### 教训
+
+1. **"已发布"至少是四件事**：git tag、GitHub Release、registry 元数据、
+   **tarball 可下载**。前三个各有一个读者（git / 徽章 / `npm view`），第四个
+   只有一个读者：真正要装包的人。
+2. 标准姿势失明。`npm view` 被当作发布成功的判据用了很多年，但它不下载字节。
+   **凡是"检查"和"使用"走不同路径的，检查就可能看不见使用时的失败。**
+3. 负缓存 ≠ 数据缺失，但表现一样。区分它们需要绕过缓存（换 URL 参数），而不是
+   重试。**重试同一个被缓存的 URL 永远不会好。**
