@@ -8140,3 +8140,89 @@ const code = run('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-I', u
    **凡是"检查"和"使用"走不同路径的，检查就可能看不见使用时的失败。**
 3. 负缓存 ≠ 数据缺失，但表现一样。区分它们需要绕过缓存（换 URL 参数），而不是
    重试。**重试同一个被缓存的 URL 永远不会好。**
+
+
+### 13.52 `release-status` 自己造了一个假绿（2026-11-24）
+
+#### 现象
+
+0.11.2 发完 npm 之后跑 `release-status`：
+
+```
+● git tag         v0.11.2 exists (and HEAD is exactly on it)
+● tag = shipped   runtime files identical to v0.11.2
+○ GitHub Release  not found — the badge shows a red "no releases"
+● npm registry    published (dist-tags.latest = 0.11.2), tarball downloads
+
+missing from 1 place(s):
+  GitHub Release:  gh release create v0.11.2 --notes-file …
+
+release-status: consistent everywhere          ← ？！
+exit=0
+```
+
+**一行 ○，一句 "consistent everywhere"，退出码 0。**
+
+#### 原因
+
+原来的裁决只对 npm 那一行做了 `exit 1`：
+
+```js
+if (absent.some((r) => r.place === 'npm registry')) { …; process.exit(1); }
+console.log('\nrelease-status: consistent everywhere');
+```
+
+我当时是这么想的：npm 缺失是"用户真的装不上"，GitHub Release 缺失只是徽章难看，
+所以在 §13.45 之后仍把它当次要项。**但脚本打印的是 "consistent everywhere"** ——
+这句话在有一行 ○ 的时候是假的。
+
+#### 这是第四次同一个形状
+
+- §13.37：两个"总数"互相矛盾
+- §13.44：数量对了、清单错了
+- §13.50：真相源只读了一个文件
+- **本节：裁决只看了一行**
+
+四次都是**检查器错，状态对**。而且这次更难看——前三节是漏查，这节是**查到了
+却报绿**。前面三节我自己写的教训里就有"任一条红都要挡住问题"，然后我在这个
+脚本里写了一条只对单行生效的 exit。
+
+#### 修法
+
+裁决从 `absent` **整体**派生，不再逐行判断：
+
+```js
+if (absent.length === 0) { console.log('consistent everywhere'); process.exit(0); }
+const reasons = [];
+if (absent.some((r) => r.place === 'git tag'))          reasons.push('no git tag … nothing else can be trusted');
+if (absent.some((r) => r.place === 'tag = shipped'))    reasons.push('runtime files differ from the tag …');
+if (absent.some((r) => r.place === 'GitHub Release'))   reasons.push('no GitHub Release — badge shows red');
+if (absent.some((r) => r.place === 'npm registry'))     reasons.push(…元数据缺失 或 tarball 404…);
+```
+
+好处不只是"都会红"：每个缺失现在都带**一句为什么它要紧**，而不是一行命令。
+`--warn` 模式打印同样的原因清单但不退出非零。
+
+#### 变异验证
+
+| 变异 | 结果 |
+|---|---|
+| 版本改成 0.99.99（三处全无） | 三条原因同时列出，`NOT consistent — 3 problem(s)` |
+| 未提交地改 `lib/client.js` | `tag = shipped` 红，`NOT consistent — 1 problem(s)` |
+| 删掉 GitHub Release（本次真实场景） | 修好后立刻就红 —— 建完 Release 才转绿 |
+
+第二个变异也顺带确认了 §13.45 那轮把「HEAD 是否正好在 tag 上」换成「要发的树
+是否等于 tag 的树」是对的：**它现在能抓住"发版前偷偷改了 lib/"这种真实危险**，
+而旧判据抓不住。
+
+#### 教训
+
+1. **"consistent everywhere" 这句话必须由 `absent.length === 0` 保证**，不能由
+   最后一个 `console.log` 的位置保证。凡是人眼读的总结句，都该在代码里有一个
+   明确的前置条件。
+2. 我自己上一节刚写过「任一条红都要挡住问题」，然后在这一节里写了只对单行生效的
+   `exit`。**教训写下来不等于执行了** —— 这类"我知道但我没做"只能靠变异测试兜，
+   不能靠记性。
+3. 四次同形状（§13.37 / §13.44 / §13.50 / 本节）说明这不是偶发：**当检查器由
+   写它的人来裁决时，最容易漏掉的永远是"检查器自己"**。所以每次加门禁后，第一件
+   事应该是拿坏输入喂它一次。

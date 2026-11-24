@@ -114,11 +114,13 @@ const npmView = run('npm', ['view', name + '@' + version, 'version']);
 const latest = run('npm', ['view', name, 'dist-tags.latest']);
 const published = npmView.ok && npmView.out.includes(version);
 let tarballState = 'not checked';
+let tarballCode = '';
 if (published) {
 	const url = run('npm', ['view', name + '@' + version, 'dist.tarball']).out;
 	// HEAD, no cache-buster: a cache-buster would defeat the very cache that is stale,
 	// hiding exactly the window a real installer would fall into.
 	const code = run('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-I', url]).out;
+	tarballCode = code;
 	tarballState = code === '200' ? 'tarball downloads' : 'tarball URL returns HTTP ' + code + ' (metadata is live, bytes are not)';
 }
 rows.push({
@@ -140,17 +142,42 @@ if (absent.length > 0) {
 	console.log('\nmissing from ' + absent.length + ' place(s):');
 	for (const r of absent) if (r.missing) console.log('  ' + r.place + ':  ' + r.missing);
 }
+// ── verdict ──────────────────────────────────────────────────────────────────
+//
+// Every absent row must fail, not just npm. The first version only exited non-zero
+// for the npm row and then printed "consistent everywhere" with a missing GitHub
+// Release — a false green produced by this script itself, and exactly the shape
+// §13.37 / §13.44 / §13.50 record three times over (the checker is wrong, not the
+// state). The verdict is now derived from `absent` as a whole.
+if (absent.length === 0) {
+	console.log('\nrelease-status: consistent everywhere');
+	process.exit(0);
+}
+
+const reasons = [];
+if (absent.some((r) => r.place === 'git tag')) {
+	reasons.push('no git tag claims this version — nothing else can be trusted');
+}
+if (absent.some((r) => r.place === 'tag = shipped')) {
+	reasons.push('the working tree\'s runtime files differ from the tag — a publish now would ship something the tag does not describe');
+}
+if (absent.some((r) => r.place === 'GitHub Release')) {
+	reasons.push('no GitHub Release — the version badge on the repo page shows a red "no releases"');
+}
 if (absent.some((r) => r.place === 'npm registry')) {
 	// Two very different causes read the same to a user ("install fails"), so the
 	// message has to name which one it is.
-	const msg = !published
-		? 'release-status: ' + version + ' is tagged but NOT on npm — anyone installing by package name gets the old version'
-		: 'release-status: ' + version + ' is in the npm packument but its tarball is not downloadable yet — `dsh plugin add` will fail with HTTP ' +
-			'rather than install something wrong. Wait for the CDN, then re-run.';
-	if (WARN_ONLY) console.log('\n' + msg + ' (warn only)');
-	else {
-		console.error('\n' + msg);
-		process.exit(1);
-	}
+	reasons.push(!published
+		? 'not on npm at all — anyone installing by package name still gets the previous version'
+		: 'in the npm packument but the tarball is not downloadable yet (HTTP ' + tarballCode +
+			') — `dsh plugin add` fails rather than installing something wrong; this one is safe, wait for the CDN');
 }
-console.log('\nrelease-status: consistent everywhere');
+
+if (WARN_ONLY) {
+	console.log('\nrelease-status (warn only):');
+	for (const r of reasons) console.log('  · ' + r);
+	process.exit(0);
+}
+console.error('\nrelease-status: NOT consistent — ' + reasons.length + ' problem(s):');
+for (const r of reasons) console.error('  · ' + r);
+process.exit(1);
