@@ -115,7 +115,7 @@ dsh-trajectory-traceview-plus/   # repo root (directory name == npm package name
 │   ├── doc-ref-check.mjs # DESIGN.md §x.y references resolve
 │   ├── doc-heading-check.mjs # headings must be valid Markdown (space after #)
 │   ├── readme-numbers.mjs # README numbers match the code (computed, not typed)
-│   ├── release-status.mjs # are tag / GitHub Release / npm all on this version? (network; not in CI)
+│   ├── release-status.mjs # tag / Release / npm metadata / tarball / @latest resolution (network; not in CI)
 │   ├── browser-check.mjs # real-browser assertions (needs agent-browser)
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md (why each change) / PROVENANCE.md (generated)

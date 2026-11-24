@@ -8226,3 +8226,95 @@ if (absent.some((r) => r.place === 'npm registry'))     reasons.push(…元数�
 3. 四次同形状（§13.37 / §13.44 / §13.50 / 本节）说明这不是偶发：**当检查器由
    写它的人来裁决时，最容易漏掉的永远是"检查器自己"**。所以每次加门禁后，第一件
    事应该是拿坏输入喂它一次。
+
+
+### 13.53 把 `minimumReleaseAge` 做成一对断言（2026-11-24）
+
+#### 来源
+
+这条不是我想出来的。上一节写完后，另一个维护会话建议：
+
+> 如果哪天要做回归，我建议把 `--lockfile-only` 那两条命令固化成一对断言
+> （默认 vs `minimumReleaseAge=0`，必须解析出不同版本）——**它能同时守住
+> 「发布成功」和「用户装得到」这两件事**，比任何文档都可靠。
+
+它给的方法比我的更硬：`--lockfile-only` **不下载 tarball**，所以不受 §13.51 那个
+404 窗口影响，能单独看到**解析**这一步发生了什么。
+
+#### 为什么这条断言值得固化
+
+我在 §13.49 里是用完整安装测的，结论对但证据不够干净：
+
+```
+pnpm add pkg@latest                              → 0.10.0
+pnpm add pkg@latest --config.minimumReleaseAge=0 → 0.11.0
+```
+
+问题在于完整安装会同时暴露三层（解析、tarball 下载、`0.0.0-stage` 元数据缺陷）。
+换上 `--lockfile-only`：
+
+```
+默认                                → lockfile: 0.10.0
+--config.minimumReleaseAge=0        → lockfile: 0.11.2
+```
+
+**同一个 `@latest`，只差一个 flag，解析目标不同**，而 `pnpm view … version`
+全程报 0.11.2。这才是指向 `minimumReleaseAge` 的单变量证据。
+
+对方还补了一个我漏掉的事实：`pnpm config get minimumReleaseAge` 返回
+`undefined`，`pnpm add --help` 里也搜不到这个词——**默认生效、不出现在任何配置
+输出里**。所以用户连"该等多久"都无从判断。
+
+#### 实现：advisory 行，不是门禁
+
+加进 `release-status.mjs` 作为**第 5 行**，但用第三种符号：
+
+```
+● git tag         v0.11.2 exists (HEAD has moved past it, which is normal)
+● tag = shipped   runtime files identical to v0.11.2
+● GitHub Release  exists (the version badge resolves)
+● npm registry    published (dist-tags.latest = 0.11.2), tarball downloads
+◐ npm @latest     resolver holds the new release back: @latest → 0.10.0,
+                  with minimumReleaseAge=0 → 0.11.2 (self-heals; pin the version in install docs)
+
+◐ = real but self-healing, does not block
+release-status: consistent everywhere (1 advisory above, not blocking)
+```
+
+**为什么不做成阻塞项**：这个窗口会自己过去。做成红灯意味着每次发版后有若干小时
+是红的，而 §13.45 那一节的教训正是「永远不会转绿的红灯会训练人忽略输出」。
+一个明确标注"自我愈合"的 ◐，比一个持续几小时的 ○ 诚实。
+
+**但总结行必须提到它**。这是 §13.52 的直接后果：那次脚本在一行 ○ 的情况下打印
+`consistent everywhere`。所以现在只要有 ◐，总结行就变成
+`consistent everywhere (1 advisory above, not blocking)`——**扫最后一行的人
+不会以为"什么都没发生"**。
+
+#### 一个次生决定：解析失败也要出一行
+
+第一版写成 `if (a !== null && b !== null)` 才 push 行。这意味着 pnpm 不可用时，
+这一行**悄悄消失**——读者无法区分"没问题"和"没检查"。改成显式的：
+
+```
+◐ npm @latest     could not resolve (pnpm unavailable, or the lockfile shape changed) — check by hand
+```
+
+这和我前面几节反复踩的是同一件事：**沉默的通过和沉默的失败看起来一样。**
+
+#### 验证
+
+| 场景 | 输出 |
+|---|---|
+| 真实状态（0.11.2 刚发布） | `◐ resolver holds the new release back: @latest → 0.10.0, … → 0.11.2` |
+| 模拟已过窗口（默认分支也走 0） | `● resolver reaches 0.11.2 (the current release)`，总结行不带 advisory |
+| 改动 `lib/client.js` | `○ tag = shipped` 红，`NOT consistent — 1 problem(s)` |
+| 版本改成 0.99.99 | 三条原因同时列出，`NOT consistent — 3 problem(s)` |
+
+#### 教训
+
+1. **别人给的方法可能比你的更干净。** 我用完整安装证明了结论，对方用
+   `--lockfile-only` 单变量隔离了原因。同样的结论，证据强度不同。
+2. **"自我愈合"的问题需要第三种标记。** 二值（红/绿）会逼你把这类问题错误归类：
+   当红则训练人忽略红，当绿则掩盖事实。◐ 让第三种状态有名字。
+3. 白送的提醒要接住。这条建议对方明确说了「不过这是你的仓，你定」——如果我只是
+   回一句"有道理"，这对断言就不会存在。

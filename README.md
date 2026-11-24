@@ -118,7 +118,7 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 │   ├── doc-ref-check.mjs # docs/DESIGN.md 的 §x.y 引用不断链
 │   ├── doc-heading-check.mjs # 标题必须是合法 Markdown（# 后要有空格）
 │   ├── readme-numbers.mjs # README 里的数字与代码一致（数出来，不手写）
-│   ├── release-status.mjs # 查 tag / GitHub Release / npm 三处是否都有这一版（需联网，不进 CI）
+│   ├── release-status.mjs # 查 tag / Release / npm 元数据 / tarball / @latest 解析（需联网，不进 CI）
 │   ├── browser-check.mjs # 真浏览器断言（需 agent-browser）
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md（每处改动的原因）/ PROVENANCE.md（自动生成）

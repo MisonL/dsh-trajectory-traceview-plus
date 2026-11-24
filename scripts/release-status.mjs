@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 /**
- * Report the three places a release has to exist, side by side.
+ * Report the places a release has to exist, side by side.
  *
- * §13.43, §13.45 and §13.47 are the same failure three times: the repository was
- * self-consistent while an outside world disagreed.
+ * §13.43, §13.45, §13.47, §13.49, §13.51 and §13.52 are one failure repeated:
+ * the repository was self-consistent while an outside world disagreed, or while this
+ * very script reported success over a row it had just printed as missing.
  *
  *   git tag          ← what this checkout claims
+ *   tag = shipped    ← does the tree you would publish still match the tag?
  *   GitHub Release   ← what the badge on the repo page reads
- *   npm registry     ← what `npm i <name>` actually installs
+ *   npm registry     ← metadata AND whether the tarball bytes actually serve
+ *   npm @latest      ← does the resolver hand out that version, or silently an older one?
  *
- * Each one is invisible from inside the others. After `git push` + `git tag` +
+ * Each is invisible from inside the others. After `git push` + `git tag` +
  * `gh release create` the repo looks finished; if `npm publish` never ran, everyone
  * installing by package name still gets the previous version and nothing errors.
  *
@@ -17,11 +20,12 @@
  * api.github.com, and a gate that fails when the network is flaky trains people to
  * ignore it. Run it before announcing a release:
  *
- *   node scripts/release-status.mjs          # report; exit 1 if npm is behind
+ *   node scripts/release-status.mjs          # report; exit 1 if any row is missing
  *   node scripts/release-status.mjs --warn   # report only, always exit 0
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,9 +36,9 @@ const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const version = String(pkg.version);
 const name = String(pkg.name);
 
-const run = (cmd, args) => {
+const run = (cmd, args, cwd = ROOT) => {
 	try {
-		return { ok: true, out: execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() };
+		return { ok: true, out: execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() };
 	} catch (e) {
 		return { ok: false, out: ((e.stdout ?? '') + (e.stderr ?? '')).trim() };
 	}
@@ -134,13 +138,73 @@ rows.push({
 		: 'npm publish',
 });
 
+// 5. npm @latest — does the resolver actually hand out that version?
+//
+// Advisory row, NOT part of the verdict. pnpm 12 applies a supply-chain delay
+// (`minimumReleaseAge`) whose default appears in no config output: right after a
+// publish, `pnpm add <pkg>@latest` silently resolves to the PREVIOUS version while
+// `npm view` reports the new one (§13.49). The window clears by itself, so making it
+// fail would light a red lamp for hours after every release and teach people to
+// ignore the output — the exact way §13.45's permanent yellow was useless.
+//
+// The check is the pair a sibling session proposed: resolve `@latest` twice, once
+// with the delay on and once with it disabled, `--lockfile-only` so nothing downloads.
+// If the two disagree, the resolver is holding the new release back and anyone using
+// `@latest` is getting the old one.
+const resolveLatest = (extra) => {
+	const dir = mkdtempSync(join(tmpdir(), 'dsr-'));
+	try {
+		writeFileSync(join(dir, 'package.json'), '{"name":"probe","version":"1.0.0"}\n');
+		run('pnpm', ['add', name + '@latest', '--lockfile-only', ...extra], dir);
+		const lock = readFileSync(join(dir, 'pnpm-lock.yaml'), 'utf8');
+		const m = new RegExp('^\\s{2}' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '@([^:\\s]+):', 'm').exec(lock);
+		return m === null ? null : m[1];
+	} catch {
+		return null;
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+};
+const resolvedDefault = resolveLatest([]);
+const resolvedNoDelay = resolveLatest(['--config.minimumReleaseAge=0']);
+if (resolvedDefault === null || resolvedNoDelay === null) {
+	// A row that quietly disappears is its own kind of blindness: the reader cannot
+	// tell "nothing to report" from "could not check". Say which it is.
+	rows.push({
+		place: 'npm @latest',
+		present: false,
+		advisory: true,
+		detail: 'could not resolve (pnpm unavailable, or the lockfile shape changed) — check by hand',
+		missing: '',
+	});
+} else {
+	const held = resolvedDefault !== resolvedNoDelay;
+	rows.push({
+		place: 'npm @latest',
+		present: !held,
+		advisory: true,
+		detail: held
+			? 'resolver holds the new release back: @latest → ' + resolvedDefault
+				+ ', with minimumReleaseAge=0 → ' + resolvedNoDelay
+				+ ' (self-heals; pin the version in install docs)'
+			: 'resolver reaches ' + resolvedDefault + (resolvedDefault === version ? ' (the current release)' : ''),
+		missing: '',
+	});
+}
+
 const pad = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].length));
 console.log('release-status: ' + name + '@' + version + '\n');
-for (const r of rows) console.log('  ' + (r.present ? '●' : '○') + ' ' + pad(r.place, 16) + r.detail);
-const absent = rows.filter((r) => !r.present);
+const mark = (r) => (r.advisory && !r.present ? '◐' : r.present ? '●' : '○');
+for (const r of rows) console.log('  ' + mark(r) + ' ' + pad(r.place, 16) + r.detail);
+const absent = rows.filter((r) => !r.present && !r.advisory);
+const advisories = rows.filter((r) => r.advisory && !r.present);
 if (absent.length > 0) {
 	console.log('\nmissing from ' + absent.length + ' place(s):');
 	for (const r of absent) if (r.missing) console.log('  ' + r.place + ':  ' + r.missing);
+}
+if (advisories.length > 0) {
+	console.log('\n◐ = real but self-healing, does not block:');
+	for (const r of advisories) console.log('  ' + r.place + ':  ' + r.detail);
 }
 // ── verdict ──────────────────────────────────────────────────────────────────
 //
@@ -150,7 +214,11 @@ if (absent.length > 0) {
 // §13.37 / §13.44 / §13.50 record three times over (the checker is wrong, not the
 // state). The verdict is now derived from `absent` as a whole.
 if (absent.length === 0) {
-	console.log('\nrelease-status: consistent everywhere');
+	// Say the advisory out loud in the summary line. §13.52 was this script printing
+	// 'consistent everywhere' while a row above it said ○; a reader who skims the last
+	// line must not be able to come away believing there was nothing to see.
+	console.log('\nrelease-status: consistent everywhere'
+		+ (advisories.length > 0 ? ' (' + advisories.length + ' advisory above, not blocking)' : ''));
 	process.exit(0);
 }
 
