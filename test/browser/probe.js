@@ -448,6 +448,82 @@
 		if (!labelOk) fail("the panel region has no accessible name");
 	}
 
+	// 15c) the two detail-panel surfaces no browser test ever opened: nested sub-call
+	// cards (`.dstv_subCard`, README §2 "子调用链完整卡片") and the evidence-level chips
+	// (`.dstv_evRow`, README §2 "证据等级"). Both are pure paint over data the unit tests
+	// already classify — the same gap as §13.60–§13.63, now closed for the last two
+	// probe=0 items on the feature list (§13.64).
+	{
+		// --- sub-call cards: the fixture's `bash` result carries one nested `jest` call.
+		// Tool calls live INSIDE step stations — there is no "工具" station kind, so the
+		// first version of this block matched nothing and the whole group silently skipped
+		// its real assertions. Dumped the labels to find out (measured list of 15) and
+		// selected the turn-2 step, which is the one carrying the nested `jest` call.
+		const toolSt = [...document.querySelectorAll(".dstv_station")]
+			.find((o) => /轮次 2|turn 2/.test(o.getAttribute("aria-label") || ""));
+		if (toolSt === undefined) fail("the fixture has no turn-2 step station to inspect sub-calls on");
+		else {
+			toolSt.click();
+			await tick(300);
+			const body = document.querySelector(".dstv_detail .dstv_dBody");
+			if (body === null) fail("opening a tool station rendered no detail body");
+			else {
+				// The sub-call list lives inside a <details>; it must be present even when
+				// collapsed (a reader who never expands it still needs the count).
+				const summary = [...body.querySelectorAll("summary")]
+					.find((e) => /子调用|sub-call/i.test(e.textContent || ""));
+				if (summary === undefined) fail("the tool detail shows no sub-call section although the fixture has one");
+				else {
+					if (!/\(1\)|（1）|1/.test(summary.textContent || "")) fail("the sub-call summary does not state how many calls there are: " + JSON.stringify(summary.textContent));
+					// Expand and verify the child card names the child tool, not the parent.
+					const det = summary.parentElement;
+					if (det !== null) det.open = true;
+					await tick(200);
+					const cards = [...body.querySelectorAll(".dstv_subCard")];
+					if (cards.length === 0) fail("expanding the sub-call section rendered no .dstv_subCard");
+					else if (!/jest/.test(cards[0].textContent || "")) fail("the sub-call card does not name the child tool: " + JSON.stringify((cards[0].textContent || "").slice(0, 60)));
+					info.subCalls = cards.length;
+				}
+			}
+		}
+
+		// --- evidence chips: only the request tab has them, and only for a station whose
+		// request carries a prompt (the fixture's first two steps do).
+		const clickTab = async (match) => {
+			const tab = [...document.querySelectorAll("button.dstv_tab")]
+				.find((t) => (t.textContent || "").indexOf(match) >= 0);
+			if (tab === undefined) return false;
+			tab.click();
+			await tick(300);
+			return true;
+		};
+		const stepSt = [...document.querySelectorAll(".dstv_station")]
+			.find((o) => (o.getAttribute("aria-label") || "").indexOf("步骤") >= 0);
+		if (stepSt === undefined) fail("the fixture has no step station for the evidence chips");
+		else {
+			stepSt.click();
+			await tick(300);
+			const opened = await clickTab("原始请求");
+			if (!opened) fail("no 原始请求 tab on the detail panel");
+			else {
+				const row = document.querySelector(".dstv_evRow");
+				if (row === null) fail("the request tab shows no evidence-level chips (README §2 promises them)");
+				else {
+					const chips = [...row.querySelectorAll(".dstv_ev")].map((e) => (e.textContent || "").trim());
+					if (chips.length === 0) fail("the evidence row is present but empty");
+					// Every chip must carry a tooltip explaining its level — a bare label like
+					// "近似重建" without an explanation is the thing README §2 says must not happen.
+					for (const c of row.querySelectorAll(".dstv_ev")) {
+						if ((c.getAttribute("title") || "").trim() === "") fail("an evidence chip has no explanation tooltip: " + JSON.stringify(c.textContent));
+					}
+					if (!chips.some((c) => /重建|reconstruct/i.test(c))) fail("the message list is reconstructed but no chip says so: " + JSON.stringify(chips));
+					info.evidence = chips.length;
+				}
+				await clickTab("详情");
+			}
+		}
+	}
+
 	// 15a) the detail panel's ⤢ expand / ⤡ collapse toggle (README §2: "详情面板可 ⤢ 展开
 	// 全高 / ⤡ 收起"). `.dstv_panelToggle` was never clicked by any test; the panel grows
 	// to full height and, crucially, must still CONTAIN its scrolling body afterwards —
