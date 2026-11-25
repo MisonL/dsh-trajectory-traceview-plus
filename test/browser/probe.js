@@ -699,6 +699,76 @@
 		// (no `document.cookie =` anywhere in src/), which is where it can actually fail.
 	}
 
+	// 15f) ⚡ 提示词变更 (README §2, "原始请求" tab): the diff between this request's
+	// prompt and the previous one. `promptDiffOf` / `promptTextDiff` are well covered by
+	// unit tests, but the fixture had no `promptChange` at all, so `.dstv_diffBox` could
+	// never render — the whole block was unreachable in the browser (§13.67).
+	{
+		const openReqTab = async (label) => {
+			const st = [...document.querySelectorAll(".dstv_station")].find((o) => new RegExp(label).test(o.getAttribute("aria-label") || ""));
+			if (st === undefined) return false;
+			st.click();
+			await tick(250);
+			const tab = [...document.querySelectorAll("button.dstv_tab")].find((x) => (x.textContent || "").indexOf("原始请求") >= 0);
+			if (tab === undefined) return false;
+			tab.click();
+			await tick(300);
+			return true;
+		};
+
+		// (a) turn-1 step-2 gained one tool and one prompt line.
+		if (!await openReqTab("步骤 2")) fail("no turn-1 step-2 station for the prompt-diff check");
+		else {
+			const box = document.querySelector(".dstv_diffBox");
+			if (box === null) fail("a request carrying promptChange rendered no ⚡ diff box");
+			else {
+				const text = box.textContent || "";
+				if (text.indexOf("read") < 0) fail("the diff does not show the added tool: " + JSON.stringify(text.slice(0, 80)));
+				const added = box.querySelector(".dstv_diffChip.add");
+				if (added === null) fail("the added tool is not marked as an addition (+ chip)");
+				// The system-prompt delta must state both sides, not just "changed".
+				const delta = [...box.querySelectorAll(".dstv_diffChip.delta")].map((e) => (e.textContent || "").trim());
+				if (delta.length === 0) fail("the diff shows no system-prompt size delta");
+				else if (!/→/.test(delta[0])) fail("the delta does not show before AND after: " + JSON.stringify(delta[0]));
+				// The changed LINES live behind a <details>.
+				const det = box.querySelector(".dstv_diffText");
+				if (det === null) fail("the diff has no expandable changed-lines section");
+				else {
+					det.open = true;
+					await tick(200);
+					const side = det.querySelector(".dstv_diffSide.add");
+					if (side === null) fail("expanding the changed lines shows no added side");
+					else if ((side.textContent || "").indexOf("新增一条") < 0) fail("the added side does not contain the new prompt line: " + JSON.stringify((side.textContent || "").slice(0, 60)));
+					info.promptDiff = { added: true, lines: true };
+				}
+			}
+		}
+
+		// (b) turn-2 step-1 REMOVED both tools and two prompt lines — the mirror case. A
+		//     diff that only ever shows additions is the classic half-implementation.
+		if (!await openReqTab("轮次 2")) fail("no turn-2 station for the removal side of the diff");
+		else {
+			const box = document.querySelector(".dstv_diffBox");
+			if (box === null) fail("the removal case rendered no diff box");
+			else {
+				if (box.querySelector(".dstv_diffChip.del") === null) fail("removed tools are not marked (- chip): " + JSON.stringify((box.textContent || "").slice(0, 80)));
+				const det = box.querySelector(".dstv_diffText");
+				if (det !== null) {
+					det.open = true;
+					await tick(200);
+					const side = det.querySelector(".dstv_diffSide.del");
+					if (side === null) fail("the removal case shows no removed-lines side");
+					else if ((side.textContent || "").indexOf("请遵守规则") < 0) fail("the removed side does not contain the dropped line: " + JSON.stringify((side.textContent || "").slice(0, 60)));
+				}
+			}
+		}
+		// Back to the detail tab and the overview for the groups that follow.
+		const backTab = [...document.querySelectorAll("button.dstv_tab")].find((x) => (x.textContent || "").indexOf("详情") >= 0);
+		if (backTab !== undefined) { backTab.click(); await tick(200); }
+		root.focus();
+		await press("End");
+	}
+
 	// 15e) the anchor field — README §2's headline Plus feature ("粘进工具栏的 🔗 输入框
 	// 回车即可精确定位；地址栏会同步成 #tvp1:e3019"). Three separate promises, none of
 	// them ever exercised in a browser: the jump, the address-bar sync, and the refusal
