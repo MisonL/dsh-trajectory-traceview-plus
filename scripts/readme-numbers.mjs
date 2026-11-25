@@ -35,9 +35,18 @@ const pkg = JSON.parse(read('package.json'));
 const version = String(pkg.version);
 const localSteps = pkg.scripts.check.split('&&').map((s) => s.trim()).filter(Boolean).length;
 
-const probe = read('test/browser/probe.js');
-const observedGroups = new Set([...probe.matchAll(/info\.([a-zA-Z]\w*)\s*=/g)].map((m) => m[1]));
-const assertions = [...probe.matchAll(/\bfail\(/g)].length;
+// Two probe files, one count. `probe-en.js` was split out because `agent-browser eval`
+// aborts at 30 s and the language switch pushed the single file over it (§13.69) — and
+// leaving it out of this count is exactly the one-source-vs-two-sources blindness this
+// very block has already been fixed for once (§13.44).
+const PROBE_FILES = ['test/browser/probe.js', 'test/browser/probe-en.js'];
+const probes = PROBE_FILES.map((f) => read(f));
+const observedGroups = new Set();
+let assertions = 0;
+for (const src of probes) {
+	for (const m of src.matchAll(/info\.([a-zA-Z]\w*)\s*=/g)) observedGroups.add(m[1]);
+	assertions += [...src.matchAll(/\bfail\(/g)].length;
+}
 
 // ── checks added OUTSIDE probe.js ────────────────────────────────────────────
 //
@@ -55,7 +64,11 @@ const extraGroupNames = new Set(
 		.map((m) => m[1])
 		.filter((n) => !observedGroups.has(n)),
 );
-const extraAssertions = [...browserCheck.matchAll(/(?:parsed\.)?failures\.push\(/g)].length;
+// Only `push("…")` is an assertion. `push(...other)` forwards failures produced
+// ELSEWHERE (the English pass collects its own) — counting it as an assertion inflated the
+// total by one for every forwarded bundle, and the gate would then demand README numbers
+// that describe nothing a reader could point at.
+const extraAssertions = [...browserCheck.matchAll(/(?:parsed\.)?failures\.push\(\s*["'`]/g)].length;
 
 const truth = {
 	ciGates, localSteps, groups: observedGroups.size, assertions,

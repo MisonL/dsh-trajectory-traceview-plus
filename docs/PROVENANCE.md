@@ -49,6 +49,7 @@
 - `src/40-view.js`
 - `src/50-entry.js`
 - `test/browser/fixture.js`
+- `test/browser/probe-en.js`
 - `test/browser/probe.js`
 
 ## 二、`lib/client.js` 函数级

@@ -40,6 +40,20 @@ try {
 	process.exit(1);
 }
 
+// The English pass runs as a second eval. `agent-browser eval` aborts with
+// "Resource temporarily unavailable" at 30 s, and the main probe alone is close to that;
+// merging the two failed as an unparsable result instead of a red assertion.
+const probeEn = fs.readFileSync(path.join(root, "test/browser/probe-en.js"), "utf8");
+const outEn = run("agent-browser", ["eval", "--stdin"], probeEn);
+try {
+	const outerEn = JSON.parse((outEn.stdout || "").trim());
+	const parsedEn = JSON.parse(outerEn);
+	if (Array.isArray(parsedEn.failures)) parsed.failures.push(...parsedEn.failures);
+	parsed.info.englishLeaks = parsedEn.info.englishLeaks;
+} catch {
+	parsed.failures.push("the English pass did not return a parsable result");
+}
+
 if (shots) {
 	fs.mkdirSync(path.join(root, "test/browser/shots"), { recursive: true });
 	run("agent-browser", ["screenshot", "--screenshot-dir", "./test/browser/shots"]);

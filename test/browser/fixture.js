@@ -91,10 +91,16 @@
 	var host = {
 		localeDicts: {},
 		register: function (ns, dicts) { host.localeDicts[ns] = dicts; },
+		// Which dictionary to read. The panel ships zh + en, and nothing in a browser
+		// test ever rendered the English one — a hardcoded Chinese literal would have
+		// shown up only to an English user. `__setLocale` re-renders against `en` so the
+		// probe can assert the chrome carries no CJK (§13.69).
+		lang: "zh",
 		bind: function (ns) {
 			return function (key, vars) {
 				var d = host.localeDicts[ns] || {};
-				var s = (d.zh && d.zh[key] !== void 0) ? d.zh[key] : key;
+				var dict = d[host.lang] || d.zh;
+				var s = (dict && dict[key] !== void 0) ? dict[key] : key;
 				if (vars) { for (var k in vars) s = s.split("{" + k + "}").join(String(vars[k])); }
 				return s;
 			};
@@ -131,6 +137,19 @@
 		root.render(React.createElement(captured.Component, p));
 	};
 	window.__render();
+	/**
+	 * Switch the dictionary and REMOUNT. The probe uses this for the English pass.
+	 *
+	 * A plain re-render is not enough: `t` is one stable closure here, so every
+	 * `useMemo(…, [t])` keeps its cached value and the panel re-renders with the
+	 * PREVIOUS language baked into strings (measured: 22 station labels still Chinese
+	 * after switching to en). A real host swaps the whole locale binding, which changes
+	 * `t`'s identity — remounting reproduces that without me having to fake a new function.
+	 */
+	window.__setLocale = function (lang) {
+		host.lang = lang === "en" ? "en" : "zh";
+		window.__remount();
+	};
 
 	/* ---- helpers the tests drive from outside ---- */
 	/**

@@ -125,7 +125,9 @@ dsh-trajectory-traceview-plus/   # 仓库根（目录名 = npm 包名）
 │   └── browser-harness.mjs / bench-fold.mjs
 ├── docs/                 # DESIGN.md（每处改动的原因）/ PROVENANCE.md（自动生成）
 ├── test/
-│   └── smoke.test.cjs    # 纯 helpers 单测（node 直接跑）
+│   ├── smoke.test.cjs    # 纯 helpers 单测（node 直接跑）
+│   └── browser/          # fixture.js（宿主桩）/ probe.js（主断言）/ probe-en.js（英文界面）
+│                        #   harness.html 由 browser-harness.mjs 生成，不入库
 └── lib/
     ├── index.js          # 宿主半部：无操作桩（纯浏览器端插件）
     └── client.js         # 浏览器 bundle：轨迹视图（生成物）
@@ -270,8 +272,8 @@ npm test                   # 只跑 smoke
 **需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
 
 ```powershell
-node scripts/browser-check.mjs          # 起 harness，跑 182 条断言 / 记录 26 组观测
-node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 2 条断言（375px 溢出，共 14 组）
+node scripts/browser-check.mjs          # 起 harness，跑 189 条断言 / 记录 28 组观测
+node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 3 条断言（375px 溢出，共 14 组）
 ```
 
 它需要 `agent-browser`（Chrome via CDP）。**故意不进 CI**：把浏览器塞进 runner 的
