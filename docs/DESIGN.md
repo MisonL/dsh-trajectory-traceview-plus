@@ -8955,3 +8955,83 @@ smoke 里有一整套 `DRIFT` / `R4` 断言，覆盖得挺细。但那些测的�
    （title / data 属性 / 独立触发条件），不要按文本。
 3. 变异测试的"没红"有两种解释：代码没问题，或者**断言没命中**。必须逐次确认
    断言真的踩到了目标元素——上面三个坑里有两次都属于后者。
+
+
+### 13.61 「仅已加载范围」徽标：实现有三个分支，探针一个都没碰（2026-11-25）
+
+#### 现象
+
+README §2 有一条很明确的 Plus 承诺：
+
+> **检索范围显式标注**：搜索只覆盖**当前已加载**的轨迹，所以命中计数旁会显示
+> `⬆ 仅已加载范围` 徽标——点它即可加载更早一页……**没加载的历史永远不会被误报成
+> "无命中"**。
+
+而 `.dstv_scope` 在浏览器探针里出现次数是 **0**。
+
+smoke 里有 `D2` 一组断言测 `searchScopeNote(hasMore, loading, t)` 的返回值，
+覆盖得不错。但那仍然是**分类器**——和 §13.60 完全同一个盲区，隔了两节又出现一次。
+
+#### 这颗徽标其实有三个分支
+
+```js
+searching && scopeNote !== null
+  ? (canPage
+      ? <button …>          // (1) 有 loader 且不忙 → 可点，真的能翻页
+      : <span data-static>) // (2) 没有 loader → 保留提示，去掉"看起来能点"
+  : null                    // (3) 全量已加载 / 未在搜索 → 不显示
+```
+
+分支 (1)/(2) 的差别在源码注释里写得很重：
+
+> `data-static` drops the pointer cursor and the hover highlight: `.dstv_scope` is
+> styled as a button, so a bare span would still LOOK clickable — the same lie one
+> layer down.
+
+**"看起来能点但其实不能"** 是这一整个项目反复在防的东西。而它零覆盖。
+
+#### 补的断言
+
+| 场景 | 断言 |
+|---|---|
+| 搜索中 + `hasMore: true` | 徽标存在、文案含「仅已加载」、有 `title`、**是 `<button>`**、**无 `data-static`** |
+| 切到 `hasMore: false` | 徽标**消失**（全量会话上常驻警告会训练人忽略它） |
+| 切回 `hasMore: true` | 徽标回来 |
+| 按 `Esc` | 徽标随之消失（搜索结束后留着是同一类谎言） |
+
+#### 写的时候又踩了状态顺序
+
+第一版把徽标断言放在 `Esc` **之后**，报：
+
+```
+✗ a search with hasMore=true rendered no ⬆ loaded-range badge
+```
+
+因为 `Esc` 已经把搜索清空了，`searching` 变 false，徽标按设计就不该在。
+**是我把断言放在了错误的状态里**，不是徽标没渲染。
+
+修法：把整块移到 `Esc` 之前，并**额外**加一条 `Esc` 之后徽标必须消失的断言——
+错位让我发现了一个本来没想到要测的行为。
+
+这已经是这一轮第二次被"断言所处状态"咬到（§13.60 坑 2 是拿错快照类型，
+§13.56 第 2 条是改坏后一组的前提）。**顺序耦合是探针的常态，不是意外。**
+
+#### 变异验证
+
+| 变异 | 结果 |
+|---|---|
+| `searchScopeNote` 忽略 `hasMore`（永远返回提示） | `the loaded-range badge is still shown on a fully loaded session` |
+| 删掉徽标渲染 | `rendered no ⬆ loaded-range badge` + 恢复那条也红 |
+| 恒用静态 `span` | `should be a button, got <span>` + `marked data-static while a loader exists` |
+
+三条分支各自都有独立的变异能打到。
+
+#### 教训
+
+1. **第 13.60 节的盲区立刻又出现一次。** 上一节刚写"单元测试测分类器，浏览器测试
+   测渲染结果"，这一节就在同一个形状上又找到一个。说明这类盲区不是靠"记住教训"
+   能清掉的，得靠**逐个 README 承诺去核对**。
+2. 分支数量 > 1 的 UI 元素，每个分支都该有能打到它的变异。`(1)/(2)/(3)` 里
+   我最开始只想着"存在 / 不存在"，差点把"是 button 还是 span"这一整类漏掉。
+3. 断言的位置就是它的一部分。同一条 `document.querySelector(".dstv_scope")`
+   在两处放，测的是两个不同的行为。

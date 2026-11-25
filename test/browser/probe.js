@@ -189,9 +189,36 @@
 			if (cntEnter1 === cntEnter0) fail("`Enter` did not move to the next match (stayed " + cntEnter0 + ")");
 			await shiftPress("Enter", true);
 			if (counter.textContent !== cntEnter0) fail("`Shift+Enter` did not step back to " + cntEnter0 + " (got " + counter.textContent + ")");
-			// Esc clears the query and leaves the overview reachable again.
+			// ▲ the loaded-range badge (README §2 "检索范围显式标注"): while a search is
+			// active and older history exists, the panel MUST say the search only covers
+			// what is loaded — an unqualified "0 matches" is the lie this badge exists to
+			// prevent. The harness session store starts with hasMore: true, so it must be
+			// here; nothing verified it before (§13.61).
+			const scope = document.querySelector(".dstv_scope");
+			if (scope === null) fail("a search with hasMore=true rendered no ⬆ loaded-range badge");
+			else {
+				if ((scope.textContent || "").indexOf("仅已加载") < 0) fail("the scope badge does not say the range is limited: " + JSON.stringify((scope.textContent || "").slice(0, 40)));
+				if (scope.getAttribute("title") === null) fail("the scope badge has no explanation tooltip");
+				// It is an actionable control here: the harness supplies loadOlder, so the
+				// badge must be a live button rather than the static notice variant.
+				if (scope.tagName.toLowerCase() !== "button") fail("with loadOlder available the badge should be a button, got <" + scope.tagName.toLowerCase() + ">");
+				if (scope.hasAttribute("data-static")) fail("the badge is marked data-static while a loader exists");
+			}
+			// And when older pages do NOT exist, the badge must vanish — a permanent
+			// "loaded range only" warning on a fully loaded session is noise that teaches
+			// readers to ignore it.
+			window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: false }));
+			await tick(200);
+			if (document.querySelector(".dstv_scope") !== null) fail("the loaded-range badge is still shown on a fully loaded session");
+			window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: true }));
+			await tick(200);
+			if (document.querySelector(".dstv_scope") === null) fail("the loaded-range badge did not come back when hasMore returned");
+			// Esc clears the query and leaves the overview reachable again. It must ALSO
+			// retract the scope badge: a stale "loaded range only" chip next to an empty
+			// box would be the same class of lie as an unqualified "0 matches".
 			await press("Escape");
 			if (searchBox.value !== "") fail("`Esc` did not clear the search box (value " + JSON.stringify(searchBox.value) + ")");
+			if (document.querySelector(".dstv_scope") !== null) fail("the loaded-range badge survived Esc — the search is over, the warning is stale");
 			info.search = counter.textContent;
 		}
 	}
