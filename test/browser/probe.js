@@ -448,6 +448,48 @@
 		if (!labelOk) fail("the panel region has no accessible name");
 	}
 
+	// 15a) the detail panel's ⤢ expand / ⤡ collapse toggle (README §2: "详情面板可 ⤢ 展开
+	// 全高 / ⤡ 收起"). `.dstv_panelToggle` was never clicked by any test; the panel grows
+	// to full height and, crucially, must still CONTAIN its scrolling body afterwards —
+	// expanding a panel whose body then overflows the window defeats the purpose.
+	{
+		const stepEl = [...document.querySelectorAll(".dstv_station")]
+			.find((o) => (o.getAttribute("aria-label") || "").indexOf("步骤") >= 0);
+		if (stepEl === undefined) fail("no step station to open the detail panel on");
+		else {
+			stepEl.click();
+			await tick(300);
+			const detail = document.querySelector(".dstv_detail");
+			if (detail === null) fail("clicking a step station opened no .dstv_detail");
+			else {
+				const toggle = detail.querySelector(".dstv_panelToggle");
+				if (toggle === null) fail("the detail panel has no ⤢ expand button");
+				else {
+					const beforeH = detail.getBoundingClientRect().height;
+					const wasFull = detail.classList.contains("full");
+					toggle.click();
+					await tick(300);
+					const isFull = detail.classList.contains("full");
+					if (isFull === wasFull) fail("the ⤢ toggle did not change the panel's expand state (still full=" + wasFull + ")");
+					if (!isFull) fail("the first click did not EXPAND the panel");
+					const afterH = detail.getBoundingClientRect().height;
+					if (!(afterH > beforeH)) fail("expanding did not make the panel taller (" + beforeH + " -> " + afterH + ")");
+					if (toggle.textContent !== "⤡") fail("the button glyph did not switch to ⤡ when expanded: " + JSON.stringify(toggle.textContent));
+					// Its body must still scroll internally rather than pushing the page.
+					const body = detail.querySelector(".dstv_dBody");
+					if (body !== null) {
+						const cs = getComputedStyle(body);
+						if (cs.overflowY !== "auto" && cs.overflowY !== "scroll") fail("the expanded panel's body no longer scrolls internally (overflow-y=" + cs.overflowY + ")");
+					}
+					toggle.click();
+					await tick(300);
+					if (detail.classList.contains("full")) fail("the second click did not collapse the panel again");
+					if (toggle.textContent !== "⤢") fail("the glyph did not return to ⤢ after collapsing");
+				}
+			}
+		}
+	}
+
 	// 15b) the header controls the README §2 feature bullets promise: KPI summary and
 	// the ⏱ isometric/clock axis toggle. Both were rendered by code that no browser test
 	// ever looked at — the same "classifier tested, paint not" gap as §13.60/§13.61, found
@@ -508,10 +550,16 @@
 			}
 			return out;
 		};
-		// The panel has been searched and navigated by now, so at most one key may exist.
+		// README §10 says ONE key PER CONVERSATION — not one key total. The earlier group
+		// deliberately remounts the panel under `session-2` to prove state does not leak
+		// across conversations, so two keys is the CORRECT outcome here; asserting "at
+		// most one" was my own misreading of the promise (measured: it went red the moment
+		// a new group touched the panel).
 		const ks = keys();
-		if (ks.length > 1) fail("more than one view-state key was written: " + JSON.stringify(ks));
-		if (ks.length === 1) {
+		if (ks.length > 2) fail("more than two view-state keys were written for two conversations: " + JSON.stringify(ks));
+		if (new Set(ks).size !== ks.length) fail("duplicate view-state keys: " + JSON.stringify(ks));
+		for (const k of ks) if (!/^dstv:view:1:.+$/.test(k)) fail("a view-state key does not follow the documented prefix+session shape: " + k);
+		if (keys().length > 0) {
 			const raw = window.sessionStorage.getItem(ks[0]);
 			let parsed = null;
 			try { parsed = JSON.parse(raw); } catch { parsed = null; }
