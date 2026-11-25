@@ -699,6 +699,108 @@
 		// (no `document.cookie =` anywhere in src/), which is where it can actually fail.
 	}
 
+	// 15e) the anchor field — README §2's headline Plus feature ("粘进工具栏的 🔗 输入框
+	// 回车即可精确定位；地址栏会同步成 #tvp1:e3019"). Three separate promises, none of
+	// them ever exercised in a browser: the jump, the address-bar sync, and the refusal
+	// to fake success (§13.66).
+	{
+		const aIn = document.querySelector("input.dstv_anchorInput");
+		if (aIn === null) fail("the 🔗 anchor field is missing from the toolbar");
+		else {
+			const setA = (v) => {
+				const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(aIn), "value").set;
+				setter.call(aIn, v);
+				aIn.dispatchEvent(new Event("input", { bubbles: true }));
+			};
+			const enterA = async (ms) => {
+				aIn.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+				await tick(ms === void 0 ? 600 : ms);
+			};
+			// The anchor note is a warn chip, but so are the drift/malformed chips. Match on
+			// the anchor-specific phrasing rather than "the first warn chip" — picking the
+			// first one read the fixture's drift chip and reported a phantom failure.
+			const anchorNote = () => {
+				const re = /锚点格式无法识别|正在向前加载|未持久化|不在当前窗口|已向前翻页|已落定/;
+				const c = [...document.querySelectorAll(".dstv_chip.warn")]
+					.map((e) => (e.textContent || "").trim())
+					.filter((x) => re.test(x));
+				return c.length === 0 ? "" : c[c.length - 1];
+			};
+
+			// A previous group left a station selected and the clock button focused, so
+			// pressing End from there does nothing: focus the panel first, then deselect.
+			root.focus();
+			await press("End");
+			if (selected().length !== 0) fail("could not reach the overview before the anchor checks: " + JSON.stringify(selected()));
+
+			// (1) A garbage anchor must be REFUSED — no move, and an explanation. README:
+			//     "不会伪装成…" for the absent case; "不会假装成功" is the same rule.
+			setA("not-an-anchor");
+			await enterA();
+			if (selected().length !== 0) fail("a malformed anchor moved the view to " + JSON.stringify(selected()));
+			if (anchorNote().indexOf("无法识别") < 0) fail("a malformed anchor produced no explanation (note " + JSON.stringify(anchorNote()) + ")");
+
+			// (2) Round-trip: take a station's OWN copied anchor, deselect, paste it back.
+			//     Asserting a hardcoded "tvp1:e2 lands on position 2" would encode the
+			//     fixture's layout; a round trip asserts the property that matters — the
+			//     anchor you were given brings you back to the station you took it from.
+			const stepIdx = opts().findIndex((o) => /步骤 2|step 2/.test(o.getAttribute("aria-label") || ""));
+			if (stepIdx < 0) fail("the fixture has no turn-1 step-2 station for the anchor round-trip");
+			else {
+				opts()[stepIdx].click();
+				await tick(250);
+				const copyBtn = [...document.querySelectorAll("button")]
+					.find((b) => /复制锚点/.test((b.getAttribute("aria-label") || "") + (b.textContent || "")));
+				if (copyBtn === undefined) fail("no copy-anchor button on the round-trip station");
+				else {
+					const before = wrote.length;
+					copyBtn.click();
+					await tick(250);
+					if (wrote.length === before) fail("copy-anchor wrote nothing during the round-trip");
+					else {
+						const anchor = wrote[wrote.length - 1];
+						root.focus();
+						await press("End");
+						await tick(150);
+						if (selected().length !== 0) fail("could not deselect before pasting the anchor back");
+						setA(anchor);
+						await enterA();
+						const back = selected();
+						if (back.length !== 1) fail("pasting " + anchor + " back selected " + JSON.stringify(back) + " instead of one station");
+						else if (back[0] !== stepIdx) fail("pasting " + anchor + " back landed on station " + back[0] + " instead of " + stepIdx);
+						// The address bar must mirror it: that is what makes the link shareable.
+						if (location.hash !== "#" + anchor) fail("the address bar was not synced to " + anchor + ": " + JSON.stringify(location.hash));
+						info.anchor = { roundTrip: anchor + " -> " + back.join(), hash: location.hash };
+					}
+				}
+			}
+
+			// (3) An anchor that is not in this session must SAY so, not silently do nothing
+			//     and not page forever. Turn hasMore off so the paging loop exits at once.
+			window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: false }));
+			await tick(200);
+			root.focus();
+			await press("End");
+			setA("tvp1:e999999");
+			await enterA(1500);
+			const gone = anchorNote();
+			if (gone.indexOf("不在当前窗口") < 0 && gone.indexOf("未持久化") < 0 && gone.indexOf("已向前翻页") < 0) fail("an anchor outside the loaded window produced no honest note (note " + JSON.stringify(gone) + ")");
+			if (selected().length !== 0) fail("an anchor outside the loaded window still selected " + JSON.stringify(selected()));
+			window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: true }));
+			await tick(200);
+
+			// (4) Escape clears the field and its note.
+			setA("tvp1:e2");
+			await tick(100);
+			aIn.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+			await tick(200);
+			if (aIn.value !== "") fail("Esc did not clear the anchor field: " + JSON.stringify(aIn.value));
+			if (anchorNote() !== "") fail("Esc left the anchor note behind: " + JSON.stringify(anchorNote()));
+			root.focus();
+			await press("End");
+		}
+	}
+
 	// 15d) the minimap is a SECOND navigation affordance for the same stations
 	// (README §2: "顶部 minimap：每个站点一个色块…点击色块即跳转，回放时高亮当前站点").
 	// Clicking a tick was never tested — only that ticks exist. A minimap that renders
