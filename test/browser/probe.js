@@ -465,5 +465,95 @@
 		// (no `document.cookie =` anywhere in src/), which is where it can actually fail.
 	}
 
+	// 16) README §12 makes three promises about degraded data and NOTHING verified them
+	// in a real browser — the unit tests cover the classifier, never the painted result:
+	//   "malformed data must not crash the page, it degrades and warns"
+	//   "an incompatible version must say so loudly, never fake an empty state"
+	//   "a kind:'unknown' node is a first-class station, not evidence of drift"
+	// Driving the store directly is the honest way to test these: they are states the
+	// host produces, not something a user can click into (§13.60).
+	{
+		const saved = window.__store.value;
+		const setSnap = async (snap) => { window.__store.set(snap); await tick(400); };
+		const txt = (sel) => {
+			const el = document.querySelector(sel);
+			return el === null ? null : (el.textContent || "").slice(0, 120);
+		};
+
+		// (a) a genuinely empty session → the empty state, with the legend, no crash.
+		await setSnap({ eventNodes: [], requests: [], callSchemas: {}, runningCalls: [], partial: null });
+		const emptyTxt = txt(".dstv_empty");
+		if (emptyTxt === null) fail("an empty snapshot rendered no .dstv_empty block");
+		else if (emptyTxt.indexOf("暂无轨迹数据") < 0) fail("the empty state does not explain itself: " + JSON.stringify(emptyTxt.slice(0, 40)));
+		if (document.querySelector(".dstv_incompat") !== null) fail("an empty-but-valid session was reported as INCOMPATIBLE — empty is not drift");
+		if (document.querySelector(".dstv_emptyLegend") === null) fail("the empty state dropped the colour legend");
+
+		// (b) every kind unfamiliar, contract still valid → must escalate loudly with codes.
+		await setSnap({ eventNodes: [{ kind: "message.user", seq: 1, time: 1 }, { kind: "zzz.renamed", seq: 2, time: 2 }], requests: [], callSchemas: {}, runningCalls: [], partial: null });
+		const incTxt = txt(".dstv_incompat");
+		if (incTxt === null) fail("a snapshot with zero recognizable kinds showed the EMPTY state instead of an incompatibility notice — that is the 'fake empty' README §12 forbids");
+		else {
+			if (incTxt.indexOf("无法识别") < 0) fail("the incompatibility notice does not say what happened: " + JSON.stringify(incTxt.slice(0, 40)));
+			const codes = txt(".dstv_incompatCodes");
+			if (codes === null || codes.indexOf("unrecognized-kinds") < 0) fail("the notice lists no reason codes: " + JSON.stringify(codes));
+		}
+
+		// (c) the documented fallback kind is NOT drift: one `unknown` node next to a real
+		//     station must render as stations, with no incompatibility banner. This is the
+		//     regression R4 in the smoke suite records (one exotic event once blanked the
+		//     whole panel) — here we check the painted outcome, not the classifier.
+		await setSnap({ eventNodes: [
+			{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: "hi" }] },
+			{ kind: "unknown", seq: 2, time: 2, type: "exotic", data: {} },
+		], requests: [], callSchemas: {}, runningCalls: [], partial: null });
+		if (document.querySelector(".dstv_incompat") !== null) fail("a documented kind:'unknown' node still triggers the incompatibility banner");
+		if (document.querySelectorAll(".dstv_station").length === 0) fail("a session with one unknown node rendered no stations at all");
+		// The banner is the loud half; the header CHIP is the quiet half, and it is the one
+		// that actually fired in the R4 regression (the node was counted as drift, so the
+		// header said "1 条记录无法识别" while the view rendered fine). Asserting only on
+		// the banner missed it: measured, removing "unknown" from KNOWN_NODE_KINDS kept
+		// this whole group green.
+		const driftChip = [...document.querySelectorAll(".dstv_chip.warn")]
+			.map((e) => (e.textContent || "").trim())
+			.find((c) => c.indexOf("无法识别") >= 0);
+		if (driftChip !== undefined) fail("the documented kind:'unknown' node was counted as drift: header says " + JSON.stringify(driftChip));
+
+		// (d) PARTLY damaged — and there are TWO different header chips for this, which a
+		//     first version of this probe conflated. Both render the SAME visible text
+		//     ("N 条记录结构异常") from two different locale keys, so matching on text alone
+		//     proved neither of them: removing the contract chip entirely left this green
+		//     because the invalid-records chip happened to be showing. Trigger each one on
+		//     its own condition and read the chip's title, which names the locale key.
+		//
+		//   hMalformed ← snapshotContract().ok === false   (valid kind+seq, bad `content`)
+		//   hInvalid   ← nodeStats.invalid > 0             (missing/empty kind, bad seq)
+		const chipInfo = () => [...document.querySelectorAll(".dstv_chip.warn")]
+			.map((e) => ({ text: (e.textContent || "").trim(), title: e.getAttribute("title") || "" }));
+
+		await setSnap({ eventNodes: [
+			{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: "hi" }] },
+			{ kind: "assistant", seq: 2, time: 2, turn: 1, step: 1, messageId: "m1", blocks: [], content: "not-an-array" },
+		], requests: [], callSchemas: {}, runningCalls: [], partial: null });
+		const c1 = chipInfo();
+		if (!c1.some((c) => c.title.indexOf("字段形状不符合预期") >= 0)) fail("a bad \`content\` shape produced no contract-level ⚠ chip (chips: " + JSON.stringify(c1) + ")");
+		if (document.querySelectorAll(".dstv_station").length === 0) fail("the healthy record next to a bad-content record was not rendered");
+		if (window.__errors.length > 0) fail("a malformed snapshot threw in the browser: " + String(window.__errors[0]));
+
+		await setSnap({ eventNodes: [
+			{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: "hi" }] },
+			{ kind: "", seq: 2, time: 2 },
+			{ seq: 3, time: 3 },
+		], requests: [], callSchemas: {}, runningCalls: [], partial: null });
+		const c2 = chipInfo();
+		if (!c2.some((c) => c.title.indexOf("缺少 kind 或 seq") >= 0)) fail("records with a missing kind/seq produced no invalid-records ⚠ chip (chips: " + JSON.stringify(c2) + ")");
+
+		// (e) and the healthy state must come back — a degradation that never recovers is
+		//     indistinguishable from a crash for the reader.
+		await setSnap(saved);
+		if (document.querySelectorAll(".dstv_station").length === 0) fail("the healthy snapshot did not come back after the degraded cases");
+		if (document.querySelector(".dstv_incompat") !== null || document.querySelector(".dstv_warn") !== null) fail("a warning banner survived the return to healthy data");
+		info.degraded = { empty: true, incompatible: true, unknownKind: "ok", malformed: true, recovered: true };
+	}
+
 	return JSON.stringify({ failures, info });
 })()

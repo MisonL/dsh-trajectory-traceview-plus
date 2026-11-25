@@ -8854,3 +8854,104 @@ localStorage（那个在 `file://` 下是真的可用，变异 A 验证过会红
    /cookie"是真的，它让上面那句假的"不写入任何存储"显得也可信。
 3. **变异测试也可能被环境骗过。** `file://` 下 cookie 赋值无效，于是"没有 cookie"
    永真。写断言前先确认**这个环境下失败是可能的**——否则测的不是代码，是环境。
+
+
+### 13.60 README §12 的三条承诺，浏览器里一条都没验过（2026-11-25）
+
+#### 现象
+
+README §12「兼容性与数据契约」有三条很硬的承诺：
+
+1. 畸形数据不会让页面崩，有显式 `⚠ N 条记录结构异常` 提示
+2. 版本不兼容会**大声说**，不会伪装成「暂无数据」
+3. `kind: "unknown"` 是契约里有名字的类型，**不计入**版本不兼容
+
+smoke 里有一整套 `DRIFT` / `R4` 断言，覆盖得挺细。但那些测的是**分类器**
+（`snapshotContract` / `unknownNodeStats` / `isEverythingUnknown`），
+**没有一条测画出来的东西**。
+
+浏览器探针此前只喂过一份健康 fixture：第 1 组就断言「有 15 个站点」，之后全程
+正常路径。`dstv_empty` / `dstv_incompat` / `dstv_warn` / `dstv_chip.warn`
+在探针里出现次数是 **0**。
+
+也就是说：分类器算对了，UI 用错了，没有任何东西会知道。
+
+#### 新第 16 组 `degraded`
+
+直接改 `window.__store`，把面板推进四种降级状态，断言**渲染结果**：
+
+| 场景 | 断言 |
+|---|---|
+| 空会话 | 有 `.dstv_empty`、文案含「暂无轨迹数据」、**不是** incompat、图例仍在 |
+| 全部 kind 不认识 | 有 `.dstv_incompat`、文案含「无法识别」、`.dstv_incompatCodes` 含 `unrecognized-kinds` |
+| 一个 `kind:"unknown"` + 一个正常站点 | **无** incompat、**无** drift chip、站点仍渲染 |
+| 部分记录损坏 | 有对应的 ⚠ chip，健康记录仍渲染 |
+| 恢复到健康数据 | 站点回来、无残留横幅 |
+
+最后一条（恢复正常）是容易漏的：**永不恢复的降级状态，对读者来说和崩溃没有区别**。
+
+#### 写这组时踩的三个坑，全是探针自己的
+
+**坑 1：引号嵌在双引号字符串里。**
+`"… that is the "fake empty" README forbids"` —— 语法错误。改用单引号。
+
+**坑 2：拿错了一个状态。**
+我最初用 `{ eventNodes: "nope" }` 测「有 ⚠ 结构异常提示」，报：
+
+```
+✗ a contract-damaged snapshot produced no .dstv_warn notice
+```
+
+原因是这份快照**一条可用记录都没有**，于是正确地走进了 incompatibility 分支，
+而 incompatibility 分支里**没有** header chip。**是我把两种状态混成一种了**：
+「零条可用」和「部分损坏」是不同分支。
+
+**坑 3（最重要）：两条 chip 的可见文本一模一样。**
+改成"部分损坏"后仍然失败一次，然后成功——但变异测试打脸了：把 contract chip
+整个删掉，探针依然绿。
+
+因为 header 里有**两条** chip，文案相同、来源不同：
+
+| chip | 触发条件 | locale key |
+|---|---|---|
+| `hMalformed` | `snapshotContract().ok === false` | `view.malformed` = `{n} 条记录结构异常` |
+| `hInvalid` | `nodeStats.invalid > 0` | `view.invalid` = `{n} 条记录结构异常` |
+
+**两条都渲染成「N 条记录结构异常」。** 我按文本匹配，匹配到的是另一条，
+于是两条断言互相掩护——删掉任何一条都不会红。
+
+这和 §13.59 的 cookie 假绿是同一个形状：**断言命中的是你以为的东西吗？**
+
+修法：用各自独立的条件触发，并读 `title`（不同 locale key 的 title 不同）：
+
+```js
+// hMalformed ← 合法 kind+seq，但 content 不是数组
+{ kind: "assistant", seq: 2, …, content: "not-an-array" }
+→ 断言 title 含 "字段形状不符合预期"
+
+// hInvalid ← kind 为空 / seq 缺失
+{ kind: "", seq: 2 }, { seq: 3 }
+→ 断言 title 含 "缺少 kind 或 seq"
+```
+
+#### 变异验证
+
+| 变异 | 第一版 | 修好后 |
+|---|---|---|
+| `incompatible = false`（伪造空态） | 红 | 红 |
+| 把 `unknown` 移出 `KNOWN_NODE_KINDS` | **绿（漏报）** | 红（header 说「1 条记录无法识别」） |
+| 删掉 contract chip | **绿（被另一条掩护）** | 红 |
+| 删掉 invalid chip | — | 红 |
+
+第二行值得单独说：`kind:"unknown"` 的回归在 R4 里被记过一次（一个陌生事件让整个
+面板变成「版本不兼容」）。我最初只断言「没有 incompat 横幅」，而 R4 的真实症状是
+**header 上的 drift chip**。加上 chip 断言后立刻抓到。
+
+#### 教训
+
+1. **单元测试测分类器，浏览器测试测渲染结果。** 两者都绿才算真的。这次分类器
+   全对，UI 完全没验。
+2. 文案相同、来源不同的元素是最难查的假绿。**要么让文案不同，要么按结构断言**
+   （title / data 属性 / 独立触发条件），不要按文本。
+3. 变异测试的"没红"有两种解释：代码没问题，或者**断言没命中**。必须逐次确认
+   断言真的踩到了目标元素——上面三个坑里有两次都属于后者。
