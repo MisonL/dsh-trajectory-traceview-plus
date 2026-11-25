@@ -9273,3 +9273,86 @@ const det = summary.parentElement;   // ← summary 是 undefined 就炸
    因为站点标签里混着 meta 文本。选元素要靠结构，不要靠可见文案。
 2. 测试辅助函数如果不抛，就必须显式 `else` 保护后续代码。`fail()` 之后的一切
    都在 undefined 上运行。
+
+
+### 13.65 三个复制按钮只验过一个，minimap 只验过"存在"（2026-11-25）
+
+#### 复制按钮
+
+README §2 承诺了三个入口：
+
+| 入口 | 产出 |
+|---|---|
+| 🔗 复制锚点 | `tvp1:e3019` |
+| 📋 复制本步复盘 | 该步的 Markdown 包 |
+| 📋 Markdown（头部） | 整段轨迹 + 附录 |
+
+探针只验过第一个。后两个函数的**单元测试很足**（`buildStepMarkdown` /
+`buildTraceMarkdown`），但按钮本身从没被点过——**调用点接错 builder 是可以直接
+上线的**。
+
+补的断言：
+
+`📋 复制本步复盘`
+- 剪贴板真的收到东西（≥80 字符）
+- 有 markdown 标题
+- 提到本步调用的工具
+- **不含另一站的工具结果**（`128 passing` 属于轮次 2，本步是轮次 1）
+
+最后一条是关键：本步包和整段包最容易混淆，而"内容正确"只能靠"不该有的东西不
+在里面"来证。
+
+`📋 Markdown`
+- 剪贴板收到东西
+- **严格大于**单步包
+- 含后面轮次的文本（`第 7 轮问题`）
+- 有附录标题
+
+#### 变异验证（一个都没白写）
+
+| 变异 | 结果 |
+|---|---|
+| 本步包改用 `buildTraceMarkdown` | `leaked another step's tool result` + `is not larger than one step's pack` |
+| 整段导出只取前 5 站 | `does not include the later turns` |
+| 附录标题换成 `-` | `has no system-prompt appendix` |
+
+#### minimap：只验了"色块存在"
+
+`.dstv_miniTick` 在探针里出现 0 次。README §2 说的是「**点击色块即跳转**，
+回放时高亮当前站点」——**跳转和高亮两件事都没验**。
+
+补（15d 组）：
+
+1. 色块数必须**等于站点数**（1:1，不是"差不多"）
+2. 每个色块必须有 `data-k`（颜色编码是 minimap 的全部价值）
+3. 点第 7 个色块 → 站点列表必须选中第 7 个（**两个入口必须一致**）
+4. 高亮色块必须**就是**被选中的那个
+
+第 3 条是这组的核心：minimap 和站点列表是**同一份数据的两个入口**，它们不一致
+比没有 minimap 更糟。
+
+#### 顺带又一个状态陷阱
+
+写完这组，`await press("End")` 报 `could not return to the overview`。
+
+因为刚点过色块，`document.activeElement` 是**那个色块按钮**，而它有自己的 roving
+focus 键盘处理，把 `End` 吃掉了，事件从没冒泡到面板处理器。
+
+修法：`root.focus()` 之后再按。
+
+这是**第四次**被"当前焦点/状态"咬到（§13.56 / §13.60 / §13.63 / 本节）。规律很
+清楚：**任何跨组的键盘操作，都必须显式把焦点放回面板。**
+
+#### 变异验证
+
+| 变异 | 结果 |
+|---|---|
+| 色块 `onClick` 去掉 `seek` | `clicking minimap tick 7 selected [1] — the two affordances disagree` |
+| 去掉 `data-k` | `15 minimap tick(s) carry no data-k colour key` |
+
+#### 教训
+
+1. **"函数有单测"和"按钮接对了"是两件事。** 三个复制入口里两个从没被点过，
+   接错 builder 完全能上线。
+2. 同一份数据的多个入口，必须断言它们**互相一致**，而不是各自"有反应"。
+3. 跨组键盘操作前先 `root.focus()`——焦点在子控件上时，事件被子控件的处理器吃掉。

@@ -244,6 +244,44 @@
 		if (wrote.length === 0) fail("clicking copy never called navigator.clipboard.writeText");
 		else if (!/^tvp1:e\d+$/.test(wrote[wrote.length - 1])) fail("the copied anchor has the wrong shape: " + wrote[wrote.length - 1]);
 		else info.copied = wrote[wrote.length - 1];
+
+		// The other two clipboard buttons the README advertises, still on this same step
+		// station: "📋 复制本步复盘" (a per-step markdown pack) and the header's
+		// "📋 Markdown" (the whole trace). Both only ever ran inside the pure unit tests —
+		// the BUTTONS were never clicked, so a broken wiring (wrong slice, wrong builder)
+		// would have shipped silently (§13.65).
+		const clickCopy = async (re) => {
+			const before = wrote.length;
+			const btn = [...document.querySelectorAll("button")]
+				.find((b) => re.test((b.getAttribute("aria-label") || "") + (b.textContent || "")));
+			if (btn === undefined) return null;
+			btn.click();
+			await tick(300);
+			return wrote.length > before ? wrote[wrote.length - 1] : null;
+		};
+
+		const stepPack = await clickCopy(/复制本步/);
+		if (stepPack === null) fail("clicking 📋 复制本步复盘 wrote nothing to the clipboard");
+		else {
+			// A per-step pack must be a markdown document about THIS step, not the whole
+			// trace: headings, the step's own tool, and no other turn's text.
+			if (stepPack.length < 80) fail("the step pack is suspiciously short (" + stepPack.length + " chars)");
+			if (!/^#|\n#/.test(stepPack)) fail("the step pack has no markdown heading");
+			if (stepPack.indexOf("pwsh") < 0 && stepPack.indexOf("read") < 0) fail("the step pack does not mention the tool this step called");
+			if (stepPack.indexOf("128 passing") >= 0) fail("the step pack leaked another step's tool result into this step's pack");
+			info.stepPack = stepPack.length;
+		}
+
+		const traceMd = await clickCopy(/Markdown/);
+		if (traceMd === null) fail("clicking 📋 Markdown wrote nothing to the clipboard");
+		else {
+			// The whole-trace export must be strictly larger than one step's pack, and must
+			// cover the fixture's later turns — that is what "整段轨迹" means.
+			if (stepPack !== null && traceMd.length <= stepPack.length) fail("the whole-trace markdown (" + traceMd.length + ") is not larger than one step's pack (" + stepPack.length + ")");
+			if (traceMd.indexOf("第 7 轮问题") < 0) fail("the whole-trace markdown does not include the later turns");
+			if (!/附录|Appendix/.test(traceMd)) fail("the whole-trace markdown has no system-prompt appendix");
+			info.traceMd = traceMd.length;
+		}
 	}
 
 	// 6) replay: the interval advances the selection and pause stops it
@@ -659,6 +697,39 @@
 		// would therefore pass no matter what the code did — a permanent false green, the
 		// §13.52 shape again. The claim is checked statically in the smoke test instead
 		// (no `document.cookie =` anywhere in src/), which is where it can actually fail.
+	}
+
+	// 15d) the minimap is a SECOND navigation affordance for the same stations
+	// (README §2: "顶部 minimap：每个站点一个色块…点击色块即跳转，回放时高亮当前站点").
+	// Clicking a tick was never tested — only that ticks exist. A minimap that renders
+	// but does not seek is decoration, and the station list would be the only way in (§13.65).
+	{
+		const ticks = [...document.querySelectorAll("button.dstv_miniTick")];
+		if (ticks.length !== opts().length) fail("the minimap has " + ticks.length + " ticks for " + opts().length + " stations — they must be 1:1");
+		if (ticks.length === 0) fail("the minimap rendered no ticks");
+		else {
+			// Colour coding is the minimap's whole value: every tick must declare a kind.
+			const kindless = ticks.filter((t) => (t.getAttribute("data-k") || "") === "");
+			if (kindless.length > 0) fail(kindless.length + " minimap tick(s) carry no data-k colour key");
+			// Click a tick in the middle and require the station list to follow.
+			const target = Math.min(7, ticks.length - 1);
+			ticks[target].click();
+			await tick(300);
+			const sel = selected();
+			if (sel.length !== 1 || sel[0] !== target) fail("clicking minimap tick " + target + " selected " + JSON.stringify(sel) + " — the two affordances disagree");
+			// …and the active tick must be the one that is selected.
+			const active = [...document.querySelectorAll("button.dstv_miniTick")]
+				.filter((t) => t.getAttribute("data-active") === "true")
+				.map((t) => Number(t.getAttribute("data-tick-idx")));
+			if (active.length !== 1 || active[0] !== target) fail("the minimap highlight is on " + JSON.stringify(active) + " but the selection is " + JSON.stringify(sel));
+			info.minimap = { ticks: ticks.length, seek: target };
+		}
+		// Return to the overview so later groups start from the documented state. Focus
+		// the PANEL first: after clicking a tick, activeElement is that tick button, whose
+		// own roving-focus handler consumes End and never reaches the panel handler.
+		root.focus();
+		await press("End");
+		if (selected().length !== 0) fail("could not return to the overview after the minimap checks");
 	}
 
 	// 16) README §12 makes three promises about degraded data and NOTHING verified them
