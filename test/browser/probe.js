@@ -443,9 +443,54 @@
 		const reg = document.querySelector(".dstv_root");
 		const roleOk = reg !== null && reg.getAttribute("role") === "region";
 		const labelOk = reg !== null && (reg.getAttribute("aria-label") || "").trim() !== "";
-		info.landmark = { roleOk, label: reg !== null ? reg.getAttribute("aria-label") : null };
+			info.landmark = { roleOk, label: reg !== null ? reg.getAttribute("aria-label") : null };
 		if (!roleOk) fail("the panel root is not role=region (axe region violation returns)");
 		if (!labelOk) fail("the panel region has no accessible name");
+	}
+
+	// 15b) the header controls the README §2 feature bullets promise: KPI summary and
+	// the ⏱ isometric/clock axis toggle. Both were rendered by code that no browser test
+	// ever looked at — the same "classifier tested, paint not" gap as §13.60/§13.61, found
+	// by walking the feature list item by item (§13.62).
+	{
+		// KPI: every number README §2 names must be present, checked BY LABEL and not by
+		// count. A "at least 6 cells" rule passed a mutation that deleted the errors cell,
+		// because this fixture renders 7 (five fixed + tokens in + tokens out) — the count
+		// stayed above the floor while a promised number vanished (§13.62).
+		const kpis = [...document.querySelectorAll(".dstv_kpi")];
+		const texts = kpis.map((k) => (k.textContent || "").trim());
+		const missingKpi = ["轮次", "步骤", "工具", "错误", "工具总耗时"].filter((lb) => !texts.some((t2) => t2.indexOf(lb) >= 0));
+		if (missingKpi.length > 0) fail("the KPI strip is missing " + JSON.stringify(missingKpi) + " (rendered: " + JSON.stringify(texts) + ")");
+		// Token KPIs are conditional (only when the session reports any), so assert them by
+		// their presence-in-this-fixture rather than requiring them in every session.
+		if (!texts.some((t2) => /token|Token/.test(t2))) fail("the KPI strip shows no token figure although the fixture reports usage: " + JSON.stringify(texts));
+		if (texts.some((t2) => t2 === "")) fail("a KPI cell rendered empty text: " + JSON.stringify(texts));
+		// The model chip is part of the same promise ("current model name").
+		const modelChip = document.querySelector(".dstv_modelChip");
+		if (modelChip === null) fail("the header shows no model chip");
+		else if ((modelChip.textContent || "").indexOf("deepseek-chat") < 0) fail("the model chip does not name the model: " + JSON.stringify(modelChip.textContent));
+
+		// The clock-axis toggle: OFF by default, ON after a click, and the state must be
+		// READABLE (data-on), because the only other signal is a colour shift.
+		const clockBtn = [...document.querySelectorAll("button.dstv_btn")]
+			.find((b) => (b.getAttribute("title") || "").indexOf("时钟") >= 0 || /⏱/.test(b.textContent || ""));
+		if (clockBtn === undefined) fail("the ⏱ isometric/clock axis toggle is missing from the header");
+		else {
+			if (clockBtn.getAttribute("data-on") === "true") fail("the clock axis starts ON; README says isometric is the default");
+			const before = clockBtn.textContent;
+			clockBtn.click();
+			await tick(200);
+			if (clockBtn.getAttribute("data-on") !== "true") fail("clicking the clock toggle did not mark it active (data-on missing)");
+			if (clockBtn.textContent === before) fail("the clock toggle label did not change when toggled: " + JSON.stringify(before));
+			// Scale mode must change the painted gap band, not just the label.
+			const band = document.querySelector(".dstv_gapBand");
+			if (band !== null && !band.classList.contains("scaled")) fail("clock mode is on but the gap band is not marked scaled");
+			clockBtn.click();
+			await tick(200);
+			if (clockBtn.getAttribute("data-on") === "true") fail("clicking the clock toggle twice did not turn it off");
+			info.clock = { toggle: true, band: band !== null };
+		}
+		info.kpi = texts.length;
 	}
 
 	// 15) the ONE thing this plugin writes to storage (README §10 promises exactly

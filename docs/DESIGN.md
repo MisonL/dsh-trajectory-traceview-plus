@@ -9035,3 +9035,105 @@ searching && scopeNote !== null
    我最开始只想着"存在 / 不存在"，差点把"是 button 还是 span"这一整类漏掉。
 3. 断言的位置就是它的一部分。同一条 `document.querySelector(".dstv_scope")`
    在两处放，测的是两个不同的行为。
+
+
+### 13.62 逐条走 README 功能清单，又挖出两处零覆盖 + 一个 fixture 用错了契约（2026-11-25）
+
+#### 做法
+
+§13.60 和 §13.61 连着两次在同一个形状上找到盲区（分类器测了，渲染没测）。教训写进
+去也不管用，因为下次还是靠"想起来"。于是换个办法：**把 README §2 的功能条目逐行
+拉出来，每条去 smoke 和 probe 里 grep**。
+
+表格里 `probe=0` 就是这条功能在浏览器里从没被看过一眼。
+
+#### 发现 1：KPI 与模型名零覆盖
+
+`.dstv_kpi` 在 probe 里出现 0 次。而 README §2 写得很明确：
+
+> KPI 条：轮次 / 步骤 / 工具次数 / 错误数 / 工具总耗时 / 请求与生成 tokens，
+> 实时「当前步骤」指示灯 + **当前模型名**
+
+补的断言（第 15b 组）：
+
+- 五个固定 KPI **按标签**逐个核对（轮次/步骤/工具/错误/工具总耗时）
+- token KPI 在这个 fixture 下必须出现
+- `.dstv_modelChip` 必须写着 `deepseek-chat`
+
+#### 发现 2：⏱ 等距 / 按时钟切换零覆盖
+
+这颗按钮的三个可观测点全都没验过：
+
+1. 默认 OFF（`data-on` 不存在）
+2. 点一下变 ON，**标签文案也变**（`⏱ 等距` ↔ `⏱ 按时钟`）
+3. 时钟模式下空闲色带必须拿到 `.scaled` 类——**否则切换只是换了个字**
+
+第 3 点最容易漏：只断言"按了之后 data-on 变了"和断言"模式真的生效"是两件事。
+
+#### 发现 3（最重要）：harness fixture 用的是**错的契约字段名**
+
+KPI 断言第一次跑就红：
+
+```
+✗ the KPI strip rendered 5 cells
+```
+
+一个都没有 token。查下去发现 fixture 写的是：
+
+```js
+usage: { input: 120, output: 40 }        // ← 探针自己编的
+```
+
+而 `normalizeUsage()` 读的是：
+
+```js
+num(u.inputTokens) + num(u.cacheReadTokens) + num(u.cacheWriteTokens)
+```
+
+**真实契约是 `inputTokens` / `outputTokens`。** smoke 里所有 fixture 用的都是正确
+名字，只有浏览器 harness 用了错的——因为它从没被 token 相关的断言看过。
+
+也就是说：**这个 harness 三年来一直喂着一份"插件读不懂的 usage"，而 KPI 就这样
+一直显示 5 格，没人发现。**
+
+修 `test/browser/fixture.js`（`harness.html` 是生成物，且在 `.gitignore` 里），
+改完 token KPI 立刻出现。
+
+顺带一个坑：第一次我改了 `harness.html` 然后重新生成，**改动被覆盖了**。生成物
+必须改源文件——这点很简单，但我确实先改错了地方。
+
+#### 又踩一次"按数量断言"
+
+KPI 第一版写的是 `if (kpis.length < 6) fail(...)`。变异测试删掉错误数那一格：
+
+```
+TV PLUGIN SMOKE TEST … PASS
+```
+
+因为这份 fixture 渲染的是 **7 格**（五个固定 + 请求 tokens + 生成 tokens），
+删一格还剩 6，**越过地板线**。
+
+**数量断言在"实际数量 > 承诺数量"时永远失效。** 改成按标签逐个核对，立刻抓到：
+
+```
+✗ the KPI strip is missing ["错误"] (rendered: ["7轮次","6步骤","3工具","3.5 min工具总耗时","560请求 tokens","140生成 tokens"])
+```
+
+这是这一轮第 3 次栽在同一件事上（§13.56 的 `keyboard = "ok"`、§13.60 的两条同名
+chip、本节的数量地板）。**"至少 N 个"不是覆盖率的断言。**
+
+#### 变异验证
+
+| 变异 | 结果 |
+|---|---|
+| 删掉错误数 KPI | `missing ["错误"]`（第一版数量断言漏报） |
+| 时钟按钮 `onClick: () => {}` | 三条同时红（data-on / 标签 / scaled） |
+| gap band 忽略 `clockAxis` | `clock mode is on but the gap band is not marked scaled` |
+
+#### 教训
+
+1. **逐条 grep 比"记住教训"可靠。** 前两节都写了"分类器≠渲染"，第三节还是在同一
+   形状上找到两处。方法对了才不会漏。
+2. **fixture 也是被测代码的一部分。** 它写错了字段名，整组功能就变成测不到——而且
+   看起来一切正常（KPI 有 5 格，只是缺两个）。
+3. 数量断言只在"实际数量恰好等于承诺数量"时有效。**要么按名字核对，要么别用数量。**
