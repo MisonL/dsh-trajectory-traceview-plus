@@ -62,6 +62,17 @@
 			"kpi.tokensIn": "请求 tokens",
 			"kpi.tokensOut": "生成 tokens",
 			"kpi.errors": "错误",
+			// The Token-usage chips were hardcoded English ("in" / "out" / "cache-read" …)
+			// inside a Chinese panel, while README §2 describes this section as
+			// "入站（含缓存读 / 写）与出站（含思考）". Same words as the README, compact
+			// enough for a chip. `fresh` = input tokens that came from the prompt rather
+			// than from cache (the API's `inputTokens` minus cache read/write).
+			"usage.in": "入站",
+			"usage.fresh": "未缓存",
+			"usage.cacheRead": "缓存读",
+			"usage.cacheWrite": "缓存写",
+			"usage.out": "出站",
+			"usage.think": "思考",
 			"status.done": "已完成",
 			"status.retry": "重试",
 			"detail.args": "调用参数",
@@ -237,6 +248,12 @@
 			"kpi.tokensIn": "Prompt tokens",
 			"kpi.tokensOut": "Output tokens",
 			"kpi.errors": "Errors",
+			"usage.in": "in",
+			"usage.fresh": "fresh",
+			"usage.cacheRead": "cache-read",
+			"usage.cacheWrite": "cache-write",
+			"usage.out": "out",
+			"usage.think": "think",
 			"status.done": "Done",
 			"status.retry": "Retry",
 			"detail.args": "Call arguments",

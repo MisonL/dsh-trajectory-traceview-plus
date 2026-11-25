@@ -77,7 +77,7 @@
 
 	function buildRequests() {
 		return [
-			{ purpose: "assistant", turn: 1, step: 1, status: "ok", startSeq: 2, startedAt: 1, completedAt: 901, requestConfig: { model: "deepseek-chat", provider: "deepseek", temperature: 0.3 }, usage: { inputTokens: 120, outputTokens: 40 }, prompt: { system: "你是助手。\n请遵守规则。", tools: [{ name: "pwsh", description: "run" }] } },
+			{ purpose: "assistant", turn: 1, step: 1, status: "ok", startSeq: 2, startedAt: 1, completedAt: 901, requestConfig: { model: "deepseek-chat", provider: "deepseek", temperature: 0.3 }, usage: { inputTokens: 500, outputTokens: 40, cacheReadTokens: 320, cacheWriteTokens: 60, reasoningTokens: 12 }, prompt: { system: "你是助手。\n请遵守规则。", tools: [{ name: "pwsh", description: "run" }] } },
 			{ purpose: "assistant", turn: 1, step: 2, status: "error", startSeq: 4, startedAt: 1, completedAt: 400, requestConfig: { model: "deepseek-chat", provider: "deepseek" }, usage: { inputTokens: 140, outputTokens: 10 }, error: { name: "ENOENT", message: "no such file" }, prompt: { system: "你是助手。\n请遵守规则。\n新增一条。", tools: [{ name: "pwsh", description: "run" }, { name: "read", description: "read" }] }, promptChange: { kind: "system-and-tools", previous: { system: "你是助手。\n请遵守规则。", tools: [{ name: "pwsh", description: "run" }] } } },
 			{ purpose: "assistant", turn: 2, step: 1, status: "ok", startSeq: 7, startedAt: 1, completedAt: 500, requestConfig: { model: "deepseek-chat", provider: "deepseek", reasoningEffort: "high" }, usage: { inputTokens: 300, outputTokens: 90 }, prompt: { system: "你是助手。", tools: [] }, promptChange: { kind: "system-and-tools", previous: { system: "你是助手。\n请遵守规则。\n新增一条。", tools: [{ name: "pwsh", description: "run" }, { name: "read", description: "read" }] } } }
 		];

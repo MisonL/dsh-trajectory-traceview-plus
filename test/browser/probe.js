@@ -762,6 +762,53 @@
 				}
 			}
 		}
+		// (c) the four sections the request tab is made of (README §2): 系统提示 / 工具目录 /
+		//     消息列表 / Token 用量. Only the model-config header was ever looked at, so a
+		//     section could vanish and the tab would still "work" (§13.68).
+		//     Re-open a station whose request carries a real prompt (turn-1 step-1).
+		if (!await openReqTab("步骤 1")) fail("no turn-1 step-1 station for the request-section check");
+		else {
+			const tabText = () => {
+				const body = document.querySelector(".dstv_detail .dstv_dBody");
+				return body === null ? "" : (body.textContent || "");
+			};
+			const sections = ["系统提示", "工具目录", "消息列表", "Token 用量"];
+			const missing = sections.filter((lb) => tabText().indexOf(lb) < 0);
+			if (missing.length > 0) fail("the request tab is missing section(s) " + JSON.stringify(missing) + " (README §2 promises all four)");
+
+			// 工具目录 must list the tools this request actually carried — `pwsh` here.
+			const catalog = [...document.querySelectorAll(".dstv_detail .dstv_dSection")]
+				.find((e) => (e.textContent || "").indexOf("工具目录") >= 0);
+			if (catalog === undefined) fail("no section carries the tool catalog");
+			else if ((catalog.textContent || "").indexOf("pwsh") < 0) fail("the tool catalog does not list the request's own tool: " + JSON.stringify((catalog.textContent || "").slice(0, 60)));
+
+			// 消息列表 is a RECONSTRUCTION and must say so (README §2 + §9 both warn about it).
+			const msgs = [...document.querySelectorAll(".dstv_detail .dstv_dSection")]
+				.find((e) => (e.textContent || "").indexOf("消息列表") >= 0);
+			if (msgs === undefined) fail("no section carries the message list");
+			// The label appears TWICE in this section from two different sources: the
+			// evidence chip reads "近似重建" and the warning sentence reads "…按会话日志近似
+			// 重建…". Matching /近似/ passed a mutation that deleted the sentence, because
+			// the chip still satisfied it — the §13.60/§13.63 shape again. Assert the
+			// SENTENCE (only it contains 按会话日志), so removing it is visible and the
+			// short chip cannot stand in for it.
+			else if (!/按会话日志/.test(msgs.textContent || "")) fail("the message list does not carry the full 'reconstructed from the session log' warning: " + JSON.stringify((msgs.textContent || "").slice(0, 80)));
+
+			// Token 用量 must name both directions, IN THE UI'S OWN LANGUAGE. The chips used
+			// to be hardcoded English ("in" / "out" / "cache-read") inside a Chinese panel
+			// while README §2 called them 入站 / 出站 (§13.68). Assert the Chinese words in
+			// the zh harness — matching /in|out/ would pass on the untranslated literals.
+			if (!/入站/.test(tabText())) fail("the token section has no 入站 (inbound) chip: " + JSON.stringify(tabText().slice(0, 100)));
+			if (!/出站/.test(tabText())) fail("the token section has no 出站 (outbound) chip");
+			// The cache split is the part a prompt author actually checks.
+			if (!/缓存读/.test(tabText())) fail("the token section does not split out cache reads");
+
+			// 系统提示 must state its SIZE (README §2: "字符数 + 一键复制") — a prompt you
+			// cannot size is a prompt you cannot budget.
+			if (!/字符|chars/i.test(tabText())) fail("the system-prompt section states no character count");
+			info.requestSections = sections.length;
+		}
+
 		// Back to the detail tab and the overview for the groups that follow.
 		const backTab = [...document.querySelectorAll("button.dstv_tab")].find((x) => (x.textContent || "").indexOf("详情") >= 0);
 		if (backTab !== undefined) { backTab.click(); await tick(200); }

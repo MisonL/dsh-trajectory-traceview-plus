@@ -1831,9 +1831,9 @@
 					usage !== null && usage.input + usage.output > 0 ? jsxs("div", { className: "dstv_dSection", children: [
 						jsx("span", { className: "dstv_dLabel", children: `📊 ${t("detail.usage")}` }, "uLbl"),
 						jsx("div", { className: "dstv_cfgChips", children: [
-							usage.input > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["in ", jsx("b", { children: fmtInt(usage.input) }, "v")] }, "uIn") : null,
-							usage.cacheRead > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["cache-read ", jsx("b", { children: fmtInt(usage.cacheRead) }, "v")] }, "uCR") : null,
-							usage.output > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["out ", jsx("b", { children: fmtInt(usage.output) }, "v")] }, "uOut") : null
+							usage.input > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.in")} `, jsx("b", { children: fmtInt(usage.input) }, "v")] }, "uIn") : null,
+							usage.cacheRead > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.cacheRead")} `, jsx("b", { children: fmtInt(usage.cacheRead) }, "v")] }, "uCR") : null,
+							usage.output > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.out")} `, jsx("b", { children: fmtInt(usage.output) }, "v")] }, "uOut") : null
 						] }, "uChips")
 					] }, "crUsage") : null,
 					cr.outputText !== "" ? jsxs("div", { className: "dstv_dSection", children: [
@@ -1967,12 +1967,12 @@
 					usage !== null && usage.input + usage.output > 0 ? jsxs("div", { className: "dstv_dSection", children: [
 						jsx("span", { className: "dstv_dLabel", children: `📊 ${t("detail.usage")}` }, "uLbl"),
 						jsx("div", { className: "dstv_cfgChips", children: [
-							usage.input > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["in ", jsx("b", { children: fmtInt(usage.input) }, "v")] }, "uIn") : null,
-							usage.raw > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["fresh ", jsx("b", { children: fmtInt(usage.raw) }, "v")] }, "uFresh") : null,
-							usage.cacheRead > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["cache-read ", jsx("b", { children: fmtInt(usage.cacheRead) }, "v")] }, "uCR") : null,
-							usage.cacheWrite > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["cache-write ", jsx("b", { children: fmtInt(usage.cacheWrite) }, "v")] }, "uCW") : null,
-							usage.output > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["out ", jsx("b", { children: fmtInt(usage.output) }, "v")] }, "uOut") : null,
-							usage.think > 0 ? jsx("span", { className: "dstv_cfgChip", children: ["think ", jsx("b", { children: fmtInt(usage.think) }, "v")] }, "uThink") : null
+							usage.input > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.in")} `, jsx("b", { children: fmtInt(usage.input) }, "v")] }, "uIn") : null,
+							usage.raw > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.fresh")} `, jsx("b", { children: fmtInt(usage.raw) }, "v")] }, "uFresh") : null,
+							usage.cacheRead > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.cacheRead")} `, jsx("b", { children: fmtInt(usage.cacheRead) }, "v")] }, "uCR") : null,
+							usage.cacheWrite > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.cacheWrite")} `, jsx("b", { children: fmtInt(usage.cacheWrite) }, "v")] }, "uCW") : null,
+							usage.output > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.out")} `, jsx("b", { children: fmtInt(usage.output) }, "v")] }, "uOut") : null,
+							usage.think > 0 ? jsx("span", { className: "dstv_cfgChip", children: [`${t("usage.think")} `, jsx("b", { children: fmtInt(usage.think) }, "v")] }, "uThink") : null
 						] }, "uChips")
 					] }, "uSec") : null,
 					// messages

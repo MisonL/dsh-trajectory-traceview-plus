@@ -9511,3 +9511,98 @@ README §2「原始请求」标签下有一条：
    下成立吗？**
 3. 测一个"变更"类 UI，**必须两个方向都测**。单向测试对"只实现了一半"这种最常见
    的缺陷完全无能为力。
+
+
+### 13.68 「原始请求」四个段一个都没验过，而 Token 用量里是硬编码英文（2026-11-26）
+
+#### 现象
+
+README §2 把「原始请求」拆成四段：**系统提示全文 / 工具目录 / 消息列表 / Token 用量**。
+`.dstv_dSection` 在探针里出现 **0 次**——整个请求标签从没被结构性地看过一眼。
+
+#### 真 bug：中文面板里的英文 chip
+
+补断言时先写了个宽泛版：
+
+```js
+if (!/请求 tokens|入站/i.test(tabText())) fail(…)
+```
+
+它红了。查下去发现 Token 用量那一排 chip 是**硬编码英文**：
+
+```js
+jsx("span", { children: ["in ", jsx("b", { children: fmtInt(usage.input) }, "v")] })
+jsx("span", { children: ["cache-read ", …] })
+jsx("span", { children: ["out ", …] })
+```
+
+于是中文界面里显示的是 `in 880  cache-read 320  out 52`。
+
+**而 README §2 的中文原话是「入站（含缓存读 / 写）与出站（含思考）明细」**——
+文档用中文描述了功能，实现给的是英文。§13.13 的 I18N3 守卫只查 CJK 字面量（中文
+硬编码进代码），**反向的不会查：英文字面量进中文界面。**
+
+#### 修法
+
+加 6 个 locale 键（zh / en 各一份），把这排 chip 接上：
+
+```js
+"usage.in": "入站",      "usage.fresh": "未缓存",
+"usage.cacheRead": "缓存读", "usage.cacheWrite": "缓存写",
+"usage.out": "出站",      "usage.think": "思考",
+```
+
+英文侧保持 `in` / `fresh` / `cache-read` / `cache-write` / `out` / `think`。
+
+#### 三处"同一段文字有两个来源"的坑
+
+**坑 1（第 6 次同型）：消息列表的"近似"来自两处。**
+
+这条断言：
+
+```js
+if (!/近似|approx|reconstruct/i.test(msgs.textContent)) fail(…)
+```
+
+变异（删掉 `detail.requestApprox` 整句警示）**没红**，因为同一段里还有证据等级
+chip 写着「近似重建」。删掉长警示句，短 chip 顶上。
+
+修法：断言**只有长句里才有的词**（`按会话日志`）。重做变异立刻红。
+
+**坑 2：`usage.in` 在源码里出现两次**（普通请求 + 压缩请求各一处）。第一次只改了
+一处，变异也没红——因为另一处还在。改成 `replace` 全部之后才验证成功。
+
+**坑 3：fixture 没有 cache token。**
+
+`缓存读` 断言红了一次，原因是 fixture 的 usage 只有 `inputTokens` / `outputTokens`，
+没有 `cacheReadTokens`。补上 `cacheReadTokens: 320, cacheWriteTokens: 60,
+reasoningTokens: 12` 之后，chip 才真的出现。
+
+**这是 §13.67 说的第二种"零覆盖"（数据根本没有）第二次出现。**
+
+#### 断言写了什么
+
+- 四段标签必须都在
+- 工具目录必须列出本请求携带的工具（`pwsh`）
+- 消息列表必须带**完整警示句**（`按会话日志`）
+- Token 用量必须有 `入站` / `出站` / `缓存读`
+- 系统提示必须写出字符数
+
+#### 变异验证
+
+| 变异 | 结果 |
+|---|---|
+| `usage.in` 改回硬编码 `"in "`（两处） | `no 入站 (inbound) chip` |
+| 不渲染缓存读 chip（两处） | `does not split out cache reads` |
+| 系统提示字符数换成 `—` | `states no character count` |
+| 删掉长警示句 | `does not carry the full … warning`（修前绿） |
+| 工具目录不写工具名 | `does not list the request's own tool` |
+
+#### 教训
+
+1. **I18N 守卫是单向的。** I18N3 查"代码里有中文"，不查"代码里有英文进了中文界面"。
+   后者更难自动检测，但**按可见文案断言**能顺带抓到它——这次就是这么发现的。
+2. 同一段里两个来源表达同一个意思，是这类假绿的根源（§13.60 / §13.63 / 本节）。
+   修法永远是：**找只有目标来源才有的那个词。**
+3. 变异"没红"时，先数目标在源码里出现几次。`replace(o, n, 1)` 只改一处是这类
+   漏报的常见原因。
