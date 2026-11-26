@@ -9699,3 +9699,101 @@ panel text: Trace ViewUserStepToolCompactionerror⏮⇤◀…
 2. 引擎有硬超时的时候，**拆文件**比压缩耗时更可靠；失败形态（不可解析 vs 红断言）
    也要在意，前者会掩盖真正的原因。
 3. 扫 UI 文案必须区分 **chrome 与 data**。站点标签里嵌着会话原文，那不是缺陷。
+
+
+### 13.70 流式快照从没被画出来过；修的时候撞上 30 秒上限，把探针拆成两半（2026-11-26）
+
+#### 现象
+
+`snap.partial` 是 DSH 的**流式快照**——模型正在生成时那半截回复。**插件在实际使用中
+大部分时间处于这个状态。**
+
+而浏览器探针里 `partial` **永远是 `null`**。所有 `setSnap({… partial: null })`，一个
+例外都没有。
+
+smoke 对这块的投影覆盖很细（124 处引用，含 `partial preview missing`、按 callId 去重、
+断流后不重复挂载），但**没有任何一次把它画到屏幕上**。§13.67 是"fixture 缺字段"，
+这里是"fixture 字段永远是空值"——**同一类盲区的第三种形状**。
+
+补的第 18 组：
+
+1. 给一个 `partial: { turn: 3, step: 2, blocks: [{kind:"text", text:"正在搜索…"}] }`
+2. 流式文本必须**出现在屏幕上**（这是 partial 存在的全部意义）
+3. 必须有 `data-live` 标记——"出现了"和"被标记为进行中"是两件事
+4. 传输控件必须渲染进度指示
+5. 最终记录到达后：`data-live` 必须消失、流式预览**不能作为重复卡片残留**、
+   最终内容必须在
+
+第 5 条是流式 UI 最容易错的地方：**预览收不干净会变成重复内容**，而重复内容看起来
+完全正常。
+
+#### 变异验证
+
+| 变异 | 结果 |
+|---|---|
+| `const p = null`（忽略 partial） | `the streaming partial's text is not rendered anywhere` + `carries no data-live marker` |
+| `live: true`（站点恒为 live） | `the live marker survived after the final record arrived`（+ 另一组连带红） |
+| partial 永不清空 | `the streaming preview lingered as a duplicate` |
+| — | 三条断言各自独立生效，互不掩护 |
+
+#### 撞上 30 秒硬上限
+
+加完这组，整条探针 **27.4 秒**，而 `agent-browser eval` 在 30 秒处硬超时。
+失败形态是 `Failed to read: Resource temporarily unavailable (os error 35)`——
+**不是一条红断言，是"结果无法解析"**。比红更糟。
+
+探针里 **19.8 秒是固定 `await tick(...)` 睡出来的**。两步处理：
+
+**第一步：把等待改成轮询。** 回放部分原来写死 `await tick(2200)` 等"选中项有没有前进"，
+改成 `waitFor(() => selected()[0] > n0, 4000)`——通常 1 秒内就返回。再把 22 处
+`await tick(200)`（点击后等 React）降到 120 ms。固定等待从 19.8 s 降到 13.7 s。
+
+**第二步：拆文件。** `probe.js` 只留交互部分（组 1–8），`probe-detail.js` 接状态/主题/
+降级/流式部分（组 8b–18）。两次 eval 共享同一个页面，第二半从第一半留下的状态继续。
+实测 **11.4 s + 16.3 s + 1.0 s（英文）**，各自都有余量。
+
+#### 拆分时踩的两个坑
+
+**坑 1：`root` 变成了脱离文档的节点。**
+
+```js
+const root = document.querySelector(".dstv_root");   // 在第二半开头取一次
+```
+
+而组 8b 会 `__remount()`——**替换掉 `.dstv_root` 元素**。之后所有 `root.focus()` 都在
+一个已经摘下来的节点上调用，`press("End")` 打不到任何东西。四条失败长这样：
+
+```
+✗ a malformed anchor moved the view to [1]
+✗ could not deselect before pasting the anchor back
+✗ an anchor outside the loaded window still selected [2]
+✗ could not return to the overview after the minimap checks
+```
+
+**四条全都像是键盘 bug，没有一条是。** 改成 `const rootEl = () => document.querySelector(...)`
+每次现取。
+
+（对照：拆分之前的单文件里 `root` 是在 remount **之后**才取的，所以没有这个毛病——
+是拆分引入的。）
+
+**坑 2：剪贴板桩的数组跨不过 eval 边界。**
+
+第一半的 `const wrote = []` 捕获在 `navigator.clipboard` 的闭包里，第二半读不到
+（每次 eval 是独立作用域），报 `ReferenceError: wrote is not defined`。在第二半重新装
+一个桩。
+
+#### 顺带修掉计数与实际不符
+
+`browser-check.mjs` 只把英文 pass 的 `englishLeaks` 合并进 `info`，漏了 `localeSwitch`，
+于是**打印 28 组、README 写 29 组**——门禁读三个文件、运行时读两个。改成全量合并。
+
+#### 教训
+
+1. **"字段存在"和"字段有值"是两回事。** §13.67 是字段缺失，这里是字段恒为 `null`，
+   探针里看到的都是 0，现象完全一样。
+2. **在实际使用中最常出现的状态，恰恰最容易被测试跳过**——因为构造它需要额外的数据，
+   而"健康快照"看起来更省事。
+3. 引擎有硬超时时，**先量再改**：19.8 s 的固定等待是量化之后才发现的，凭感觉只会去
+   优化渲染。
+4. 拆文件会引入**新的状态类 bug**（脱离文档的节点、跨作用域变量）。拆完必须重跑全部，
+   并且对"看起来像功能 bug"的失败先怀疑拆分本身。

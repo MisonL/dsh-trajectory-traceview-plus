@@ -26,7 +26,11 @@ const open = run("agent-browser", ["open", url]);
 if (open.status !== 0) { console.log("agent-browser open failed:\n" + open.stdout + open.stderr); process.exit(1); }
 run("agent-browser", ["wait", "1200"]);
 
-const probe = fs.readFileSync(path.join(root, "test/browser/probe.js"), "utf8");
+// BOTH halves share one page: the browser is opened once and the evals run in order, so
+// `probe-detail.js` continues from the state `probe.js` leaves. Split because
+// `agent-browser eval` aborts at 30 s and the single file had reached 27.4 s (§13.70).
+const probeFiles = ["test/browser/probe.js", "test/browser/probe-detail.js"];
+const probe = fs.readFileSync(path.join(root, probeFiles[0]), "utf8");
 const out = run("agent-browser", ["eval", "--stdin"], probe);
 const raw = (out.stdout || "").trim();
 let parsed = null;
@@ -40,7 +44,20 @@ try {
 	process.exit(1);
 }
 
-// The English pass runs as a second eval. `agent-browser eval` aborts with
+// Second half of the assertions.
+{
+	const outTail = run("agent-browser", ["eval", "--stdin"], fs.readFileSync(path.join(root, probeFiles[1]), "utf8"));
+	try {
+		const outerTail = JSON.parse((outTail.stdout || "").trim());
+		const parsedTail = JSON.parse(outerTail);
+		if (Array.isArray(parsedTail.failures)) parsed.failures.push(...parsedTail.failures);
+		Object.assign(parsed.info, parsedTail.info);
+	} catch {
+		parsed.failures.push("the second probe half did not return a parsable result");
+	}
+}
+
+// The English pass runs as a third eval. `agent-browser eval` aborts with
 // "Resource temporarily unavailable" at 30 s, and the main probe alone is close to that;
 // merging the two failed as an unparsable result instead of a red assertion.
 const probeEn = fs.readFileSync(path.join(root, "test/browser/probe-en.js"), "utf8");
@@ -49,7 +66,10 @@ try {
 	const outerEn = JSON.parse((outEn.stdout || "").trim());
 	const parsedEn = JSON.parse(outerEn);
 	if (Array.isArray(parsedEn.failures)) parsed.failures.push(...parsedEn.failures);
-	parsed.info.englishLeaks = parsedEn.info.englishLeaks;
+	// Merge EVERY key, not just one. Copying only `englishLeaks` made the printed group
+	// count (28) disagree with the number the READMEs state and readme-numbers verifies
+	// (29) — the gate read the three probe files, the runtime read two. One source.
+	Object.assign(parsed.info, parsedEn.info);
 } catch {
 	parsed.failures.push("the English pass did not return a parsable result");
 }
