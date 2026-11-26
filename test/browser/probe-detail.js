@@ -772,5 +772,79 @@
 		if (document.querySelectorAll(".dstv_station").length === 0) fail("the healthy snapshot did not come back after the live checks");
 	}
 
+	// 19) LOADING OLDER HISTORY. README §2 advertises 加载更早历史, and the probe only ever
+	// checked that the BADGE turns into a button — never that paging actually prepends
+	// anything, nor what happens to the reader's position when every index shifts. The
+	// panel is index-keyed (aria-label "第 N / M", data-station-idx, anchor keys), so this
+	// is exactly where a prepend goes wrong (§13.72).
+	{
+		// Everything below replaces the whole snapshot, so the healthy one has to come back
+		// afterwards — the English pass that runs next opens a station and expects the real
+		// fixture (it needs a request tab to exist).
+		const healthy = JSON.parse(JSON.stringify({
+			eventNodes: window.__store.value.eventNodes,
+			requests: window.__store.value.requests,
+			callSchemas: window.__store.value.callSchemas,
+			runningCalls: window.__store.value.runningCalls
+		}));
+		const setSnap = async (nodes) => {
+			window.__store.set({ eventNodes: nodes, requests: [], callSchemas: {}, runningCalls: [], partial: null });
+			await tick(400);
+		};
+		const window_mk = (from, to) => {
+			const nodes = [];
+			for (let i = from; i < to; i += 1) {
+				nodes.push({ kind: "user", seq: i * 2 + 1, time: 1000 + i * 1000, turn: i + 1, content: [{ type: "text", text: "q" + i }] });
+				nodes.push({ kind: "assistant", seq: i * 2 + 2, time: 1200 + i * 1000, turn: i + 1, step: 1, messageId: "m" + i, blocks: [{ kind: "text", text: "a" + i }] });
+			}
+			return nodes;
+		};
+		const snapInfo = () => {
+			const opts = [...document.querySelectorAll("[role=option]")];
+			const sel = opts.findIndex((o) => o.getAttribute("aria-selected") === "true");
+			return {
+				n: opts.length,
+				selIdx: sel,
+				selLabel: sel >= 0 ? (opts[sel].getAttribute("aria-label") || "") : "",
+				firstLabel: opts.length > 0 ? (opts[0].getAttribute("aria-label") || "") : "",
+				idx: opts.map((o) => o.getAttribute("data-station-idx"))
+			};
+		};
+
+		await setSnap(window_mk(100, 110));
+		const before = snapInfo();
+		if (before.n !== 20) fail("a 10-turn window produced " + before.n + " stations, expected 20");
+		if (before.idx.join(",") !== before.idx.map((_, i) => String(i)).join(",")) fail("data-station-idx is not 0..N-1 in the first window: " + JSON.stringify(before.idx.slice(0, 5)));
+
+		// Sit on the 6th station, then prepend ten older turns — the shape of a real
+		// `loadOlder()` page.
+		const optsNow = [...document.querySelectorAll("[role=option]")];
+		if (optsNow.length > 5) optsNow[5].click();
+		await tick(300);
+		const picked = snapInfo();
+		const pickedTurn = (picked.selLabel.match(/轮次 (\d+)/) || [])[1] || null;
+		if (pickedTurn === null) fail("the selected station's aria-label carries no turn number: " + JSON.stringify(picked.selLabel));
+
+		await setSnap(window_mk(90, 110));
+		const after = snapInfo();
+		if (after.n !== 40) fail("prepending 10 turns gave " + after.n + " stations, expected 40");
+		// Every station was renumbered — the reader must still be on the SAME one.
+		const afterTurn = (after.selLabel.match(/轮次 (\d+)/) || [])[1] || null;
+		if (afterTurn !== pickedTurn) fail("prepending older history moved the reader: turn " + pickedTurn + " -> " + afterTurn + " (" + JSON.stringify(picked.selLabel) + " -> " + JSON.stringify(after.selLabel) + ")");
+		if (after.selIdx === picked.selIdx) fail("the selection index did not shift at all after prepending 20 stations — the window did not really grow");
+		// …and the visible numbering must be rebuilt, not the cached one.
+		if (after.firstLabel.indexOf("/ 40") < 0) fail("the first station still advertises the old window size: " + JSON.stringify(after.firstLabel));
+		if (after.selLabel.indexOf("/ 40") < 0) fail("the selected station still advertises the old window size: " + JSON.stringify(after.selLabel));
+		if (after.idx.join(",") !== after.idx.map((_, i) => String(i)).join(",")) fail("data-station-idx is not 0..N-1 after prepending: " + JSON.stringify(after.idx.slice(0, 5)));
+
+		info.prepend = { grew: before.n + " -> " + after.n, keptTurn: afterTurn };
+
+		// Restore the REQUESTS too: the English pass opens a station and looks for the
+		// 「原始请求」 tab, which does not exist when the window has no requests at all.
+		window.__store.set(Object.assign({ partial: null }, healthy));
+		await tick(400);
+		if (document.querySelectorAll("[role=option]").length === 0) fail("the healthy window did not come back after the paging checks");
+	}
+
 	return JSON.stringify({ failures, info });
 })()

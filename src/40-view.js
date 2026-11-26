@@ -262,6 +262,27 @@
 		function TraceMapView({ useSession, useTrajectory, t, viewRequest, completeViewRequest, loadOlder, sessionKey }) {
 			const scrollerRef = (0, react.useRef)(null);
 			const minimapRef = (0, react.useRef)(null);
+			// Per-station rendered elements, so an unchanged card keeps its element identity and
+			// React skips the subtree entirely. Cleared when the session changes (ids are only
+			// unique within a session) — see `stationSig`'s comment.
+			const cardElCache = (0, react.useRef)(new Map());
+			const tickElCache = (0, react.useRef)(new Map());
+			// The caches live as long as the view, but their contents are only valid for one
+			// language and one session: station ids are per-session, and a cached element holds
+			// already-translated text. Clearing on change keeps `t` and `sessionKey` out of the
+			// per-element signature (they would invalidate every card anyway).
+			const cacheScopeRef = (0, react.useRef)({ t: null, sessionKey: null });
+			// A cached element keeps the closures it was built with. Those closures would go
+			// stale the moment the view re-renders (arrow keys read the current selection, seek
+			// reads the current window) — so the cards call THROUGH this ref, which is refreshed
+			// on every render. Element identity stays cacheable, behaviour stays current.
+			const handlersRef = (0, react.useRef)({ seek: null, keyDown: null });
+
+			if (cacheScopeRef.current.t !== t || cacheScopeRef.current.sessionKey !== sessionKey) {
+				cacheScopeRef.current = { t, sessionKey };
+				cardElCache.current.clear();
+				tickElCache.current.clear();
+			}
 			const searchRef = (0, react.useRef)(null);
 			const initDone = (0, react.useRef)(false);
 			// Which session this panel is showing. The host reuses one component instance
@@ -1295,6 +1316,43 @@
 				});
 			}
 
+			/**
+			 * Element cache for the station list and the minimap.
+			 *
+			 * Why: the list renders EVERY station on every state change. Measured on a
+			 * 900-station window, one keystroke in the search box cost 1.3–2.2 s of main
+			 * thread — typing a query was unusable. The tree fold is NOT the cost (that is
+			 * memoised and does not re-run on a keystroke); the cost is rebuilding ~900 card
+			 * subtrees and ~900 minimap buttons to flip `data-seek-dim` on the handful of
+			 * stations that actually matched.
+			 *
+			 * Rebuilding an element and re-rendering it are different costs, and React bails
+			 * out of the second when the ELEMENT IS THE SAME OBJECT (referential equality).
+			 * So: cache the element per station and return the previous one when nothing the
+			 * card reads has changed. Compared by VALUE — each fold allocates fresh station
+			 * objects, so nothing else here can be compared by identity (§13.72).
+			 *
+			 * The signature covers exactly what the card body reads: the station fields
+			 * `renderStationCard` + the axis zone touch, its position, its neighbour's edge
+			 * (the idle band), and the four per-station booleans the parent computes.
+			 */
+			// Refreshed every render; a cached element reads it at click/key time.
+			handlersRef.current.seek = seek;
+			handlersRef.current.keyDown = stationOnKeyDown;
+
+			const stationSig = (s) => (s == null ? "" : [
+				s.kind, s.id, s.label, s.who, s.text, s.displayText, s.summary, s.message,
+				s.name, s.args, s.payload, s.eventType, s.replace, s.retry,
+				s.isError, s.hasError, s.live, s.synthetic, s.tag,
+				s.time, s.startMs, s.endMs, s.seq, s.toolMs, s.maxToolMs,
+				s.outcomeText, s.outcomeKind,
+				Array.isArray(s.meta) ? s.meta.join("\u0001") : s.meta,
+				// Not just the length: the preview shows a tool marker, the error flag and the
+				// running state, so a same-length edit must still invalidate the card.
+				Array.isArray(s.cells)
+					? s.cells.map((c) => `${c.kind}${c.isError === true ? "!" : ""}${c.running === true ? "*" : ""}`).join(",")
+					: -1
+			].map((v) => (v === null || v === void 0 ? "" : String(v))).join("\u0000"));
 			const renderStationCard = (s, cardKey) => {
 				if (s.kind === "user") {
 					return jsxs("div", {
@@ -1459,6 +1517,9 @@
 			const minimapTicks = jsx("div", {
 				className: "dstv_minimap",
 				ref: minimapRef,
+				// Same reason as the listbox: search dimming is one attribute on the strip,
+				// not one per tick, so a keystroke does not rebuild every tick element.
+				"data-searching": searching ? "true" : undefined,
 				children: stations.map((s, i) => {
 					const reached = i < R;
 					let k = s.kind;
@@ -1466,13 +1527,26 @@
 					if (s.kind === "maxTokens") k = "error";
 					const done = reached && (s.kind !== "step" || !s.live);
 					const matched = searching && matchSet.has(i);
-					return jsx("button", {
+					// Same element-identity trick as the station cards: an unchanged tick keeps
+					// its element and React skips it (§13.72).
+					const tickSig = s.kind + "\u0002" + String(i) + "\u0002" + (reached ? "1" : "0")
+						+ (done ? "1" : "0") + (matched ? "1" : "0") + (s.live === true ? "1" : "0")
+						+ (k === "tool" || k === "step" ? String(s.cells.length) : "")
+						// The highlight and the "N / total" part of the aria-label change with the
+						// selection and with the window length. Missing either leaves the old
+						// highlight cached — caught by the minimap assertion, not by reasoning.
+						+ "\u0002" + (revealed !== null && i === R - 1 ? "1" : "0")
+						+ "\u0002" + minimapTickLabel(s) + "\u0002" + fmtClock(s.time)
+						+ "\u0002" + String(stations.length);
+					const tickHit = tickElCache.current.get(i);
+					if (tickHit !== undefined && tickHit.sig === tickSig && tickHit.t === t) return tickHit.el;
+					const tickEl = jsx("button", {
 						type: "button",
 						className: "dstv_miniTick",
 						"data-tick-idx": String(i),
 						"data-k": k,
 						"data-done": done ? "true" : undefined,
-						"data-dim": reached ? (searching && !matched ? "true" : undefined) : "true",
+						"data-dim": reached ? undefined : "true",
 						"data-active": revealed !== null && i === R - 1 ? "true" : undefined,
 						"data-live": s.kind === "step" && s.live === true ? "true" : undefined,
 						"data-match": matched ? "true" : undefined,
@@ -1490,8 +1564,10 @@
 						// all. Fall back to the kind and always expose aria-label.
 						title: `${minimapTickLabel(s)}${fmtClock(s.time) !== "" ? ` · ${fmtClock(s.time)}` : ""}`,
 						"aria-label": `${t("detail.position")} ${String(i + 1)} / ${String(stations.length)} · ${minimapTickLabel(s)}${fmtClock(s.time) !== "" ? ` · ${fmtClock(s.time)}` : ""}`,
-						onClick: (ev) => { ev.stopPropagation(); seek(i); }
+						onClick: (ev) => { ev.stopPropagation(); handlersRef.current.seek(i); }
 					}, `mini${i}`);
+					tickElCache.current.set(i, { sig: tickSig, t, el: tickEl });
+					return tickEl;
 				})
 			}, "rootMini");
 
@@ -1505,10 +1581,17 @@
 							role: "listbox",
 							"aria-label": t("view.label"),
 							"aria-orientation": "horizontal",
+							// Dimming non-matches while searching is a CSS job, not a per-card one.
+							// Setting it per station meant the FIRST keystroke invalidated all 900
+							// cards (2.4 s at 900 stations); one attribute on the list lets the
+							// stylesheet do it and leaves every card's element identity intact.
+							"data-searching": searching ? "true" : undefined,
 							children: [
 								revealed !== null && playheadLeft !== null ? jsx("span", { className: "dstv_playhead", "aria-hidden": "true", style: { left: `${playheadLeft}px` }, children: jsx("i", {}) }, "ph") : null,
 								stations.map((s, i) => {
 									const reached = i < R;
+									const isActive = revealed !== null && i === R - 1;
+									const matched = searching && matchSet.has(i);
 									// G4-T3: idle gap vs the previous station's end (falls back to its
 									// start / time). Rendered as an inline band so a long pause between
 									// two steps is visible without opening either one.
@@ -1551,14 +1634,27 @@
 									else if (s.kind === "unknown") dotCls += " unknown";
 									else if (s.kind === "step" && s.cells.some((c) => c.kind === "tool")) dotCls += " tool";
 									if (s.kind === "step" && s.live === true) dotCls += " live";
-									const matched = searching && matchSet.has(i);
 									const clock = fmtClock(s.time);
-									const isActive = revealed !== null && i === R - 1;
-									return jsxs("div", {
+									// Everything below is a pure function of (station, neighbour, position,
+									// N, found-in-search). If none of those moved, hand React the element
+									// it already rendered and it skips the whole subtree.
+									const sig = [
+										stationSig(s), stationSig(prevStation), String(i), String(N),
+										reached ? "1" : "0", isActive ? "1" : "0",
+										matched ? "1" : "0", clockAxis ? "1" : "0",
+										// The overview state is its own dependency: station 0 is the roving
+										// tab stop in the overview and is not once a selection exists, even
+										// though neither `reached` nor `isActive` changes for it. Caught by
+										// the roving-tab-stop assertion, not by reasoning (§13.72).
+										revealed === null ? "1" : "0"
+									].join("\u0002");
+									const hit = cardElCache.current.get(s.id);
+									if (hit !== undefined && hit.sig === sig) return hit.el;
+									const el = jsxs("div", {
 										className: "dstv_station",
 										"data-station-idx": String(i),
 										"data-dim": reached ? undefined : "true",
-										"data-seek-dim": searching && !matched && reached ? "true" : undefined,
+
 										"data-match": matched ? "true" : undefined,
 										"data-active": isActive ? "true" : undefined,
 										role: "option",
@@ -1571,8 +1667,8 @@
 										"aria-selected": revealed === null ? "false" : (isActive ? "true" : "false"),
 										"aria-label": stationAriaLabel(s, i + 1, N, t),
 										tabIndex: isActive || (revealed === null && i === 0) ? 0 : -1,
-										onKeyDown: (ev) => stationOnKeyDown(ev, i),
-										onClick: () => seek(i),
+										onKeyDown: (ev) => handlersRef.current.keyDown(ev, i),
+										onClick: () => handlersRef.current.seek(i),
 										children: [
 											...gapPrefix,
 											jsxs("div", {
@@ -1602,6 +1698,8 @@
 										}, `card${s.id}`)
 										]
 									}, s.id);
+									cardElCache.current.set(s.id, { sig, el });
+									return el;
 								})
 							]
 						})

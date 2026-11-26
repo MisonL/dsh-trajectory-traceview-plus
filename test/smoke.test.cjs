@@ -4433,7 +4433,11 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("æ­£åœ
 		if (!/isActive \? "true" : "false"/.test(src)) throw new Error("A1 the selected station must still report true");
 		if (!/stationAriaLabel\(s, i \+ 1, N, t\)/.test(src)) throw new Error("A1 stations need an accessible name");
 		if (!/tabIndex: isActive \|\| \(revealed === null && i === 0\) \? 0 : -1/.test(src)) throw new Error("A1 roving tabindex must keep exactly one station tabbable");
-		if (!/stationOnKeyDown\(ev, i\)/.test(src)) throw new Error("A1 stations must handle arrow keys");
+		// Stations dispatch through `handlersRef` so a cache-hit element still reaches the
+		// CURRENT handler (a captured closure would read a stale selection). Assert the
+		// keyboard path exists and forwards the index either way.
+		if (!/onKeyDown: \(ev\) => (?:stationOnKeyDown\(ev, i\)|handlersRef\.current\.keyDown\(ev, i\))/.test(src)) throw new Error("A1 stations must handle arrow keys");
+		if (!/handlersRef\.current\.keyDown = stationOnKeyDown;/.test(src)) throw new Error("A1 the station key handler must be refreshed each render");
 		// Focus that cannot be seen is not focus: roving tabindex is useless without a
 		// visible ring, and a placeholder is not an accessible name.
 		if (!/\.dstv_station:focus-visible\{outline:2px solid var\(--dstv-info\)/.test(src)) throw new Error("A1 stations need a visible focus ring");

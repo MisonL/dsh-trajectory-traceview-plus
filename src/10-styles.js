@@ -281,9 +281,15 @@
 			".dstv_btn[data-on=true]{color:var(--dstv-info-ink);background:color-mix(in srgb,var(--dstv-info) 12%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dstv-info) 40%,transparent)}",
 			".dstv_tbtn[data-on=true]{color:var(--dstv-info-ink);background:color-mix(in srgb,var(--dstv-info) 14%,transparent);font-weight:700}",
 			".dstv_station[data-match=true] .dstv_hcard{border-color:transparent;background:linear-gradient(var(--dsw-alias-bg-layer-1),var(--dsw-alias-bg-layer-1)) padding-box,linear-gradient(135deg,var(--dstv-warn),var(--dstv-warn)) border-box;box-shadow:0 0 12px color-mix(in srgb,var(--dstv-warn) 35%,transparent)}",
-			".dstv_station[data-seek-dim=true] .dstv_hcard{opacity:.5;filter:saturate(.3)}",
-			".dstv_station[data-seek-dim=true] .dstv_hDot{opacity:.35}",
+			// Searching dims the non-matches. Driven from the listbox so a keystroke does not
+			// rewrite every station element (§13.72): reached = not [data-dim], matched =
+			// [data-match]. Same visual result, one attribute instead of N.
+			".dstv_listbox[data-searching=true] .dstv_station:not([data-dim=true]):not([data-match=true]) .dstv_hcard{opacity:.5;filter:saturate(.3)}",
+			".dstv_listbox[data-searching=true] .dstv_station:not([data-dim=true]):not([data-match=true]) .dstv_hDot{opacity:.35}",
 			".dstv_miniTick[data-match=true]{box-shadow:0 0 0 1.5px var(--dstv-warn);height:14px}",
+			// While searching, fade the ticks that did not match. Reached-only ticks fade via
+			// [data-dim]; the search fade lives here so it costs no per-tick attribute (§13.72).
+			".dstv_minimap[data-searching=true] .dstv_miniTick:not([data-dim=true]):not([data-match=true]){opacity:.25}",
 			".dstv_detail.full{max-height:82vh}",
 			".dstv_panelToggle{margin-left:4px}",
 			".dstv_subCard{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:5px 8px;background:var(--dsw-alias-bg-layer-2);display:flex;flex-direction:column;gap:3px;margin-top:3px}",

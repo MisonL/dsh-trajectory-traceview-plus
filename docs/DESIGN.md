@@ -9862,3 +9862,141 @@ afterBadAnchor: "锚点格式无法识别"
    区域报成缺陷——如果直接改了代码，就是把正确实现改坏。
 3. 反过来记：**永远不填的 live region 是真的常见缺陷**，所以这条断言值得留。
    判断依据不是"我测的时候它是空的"，而是"在它该有内容的场景下它是否还是空的"。
+
+
+### 13.72 900 站的一次按键要 1.5 秒；元素缓存把它压到 20 ms（2026-11-26）
+
+#### 先量，别猜
+
+真实会话有多大？本机最大的一个 `session.v4.jsonl.zstd` 解压后 **12143 条事件**，
+其中 980 个 step、234 条 user/message。DSH 的窗口是
+`{maxMessages: 500, turnWindow: {minMessages: 50, minTurns: 2}}`，也就是**最多约
+500 条消息**；按 2 step/轮 估算，窗口撑满时是 **600–900 个 station**。
+
+浏览器里实测（同一份数据重复 set，取第 2–4 次，排除首次 DOM 创建）：
+
+| station 数 | 一次重算 | 搜索框一次按键 |
+|---|---|---|
+| 200 | ~350 ms | — |
+| 300 | — | 361–637 ms |
+| 600 | 876–1764 ms | — |
+| 900 | — | **1346–2172 ms** |
+
+900 站时**每敲一个字卡 1.5 秒**——搜索等于不可用。
+
+#### 第一次尝试：React.memo。失败，而且更慢
+
+把站点卡片抽成 `StationSlot` + `React.memo`，量出来 **比不改还慢 50%**：
+
+- `memo` 默认浅比较，而**每次 fold 都新建 station 对象**，所以永远不 bail out；
+- 还多了一层组件。
+
+改成按值比较（预先算一个 `stationSig` 字符串）后只回到原水平。原因见下。
+
+#### 真正的原因：重建元素 ≠ 重渲染元素
+
+React 在 **元素对象引用相同**时会跳过整棵子树。但 `stations.map(...)` 每次都造新的
+`jsx(...)`，引用必然变，于是 900 张卡片和 900 个 minimap 刻度每次都重渲染。
+
+加一层缓存即可：
+
+```js
+const sig = [stationSig(s), stationSig(prevStation), i, N, reached, isActive, matched, clockAxis, revealedNull].join("\u0002");
+const hit = cardElCache.current.get(s.id);
+if (hit !== undefined && hit.sig === sig) return hit.el;
+const el = jsxs(...);           // 原样不动
+cardElCache.current.set(s.id, { sig, el });
+return el;
+```
+
+#### 结果
+
+| 场景 | 之前 | 之后 | 倍数 |
+|---|---|---|---|
+| 600 站一次重算 | 876–1764 ms | **12–38 ms** | ~40× |
+| 900 站一次按键 | 1346–2172 ms | **23–167 ms** | ~15–60× |
+| 300 站一次按键 | 361–637 ms | **16–26 ms** | ~20× |
+
+#### 签名里必须包含什么（漏一个就是陈旧渲染）
+
+这不是"顺手加个缓存"，**每个卡片读的东西都得进签名**。实际踩到两个：
+
+**① 概览态的 roving tab stop。** `tabIndex: isActive || (revealed === null && i === 0)`
+——站点 0 在概览态是唯一的 tab 停靠点，选中任何站点后就不是了。但它的
+`reached` 和 `isActive` 都没变，于是缓存命中，**tab 停靠点留在原地**：
+
+```
+✗ the roving tab stop did not follow the selection
+```
+
+**② minimap 的高亮。** 刻度的 `data-active` 依赖 `revealed`，签名里漏了就会一直亮在
+旧位置：
+
+```
+✗ the minimap highlight is on [] but the selection is [7]
+```
+
+两条都是浏览器探针抓的，不是推理出来的。
+
+#### 处理器也不能被缓存
+
+缓存下来的元素**带着它被创建时的闭包**。`seek` 和 `stationOnKeyDown` 每次渲染都重建，
+如果卡片捕获旧的那份，方向键就会读到**旧的选中项**。做法是中间隔一层 ref：
+
+```js
+handlersRef.current.seek = seek;
+handlersRef.current.keyDown = stationOnKeyDown;   // 每次渲染刷新
+onClick: () => handlersRef.current.seek(i),       // 元素可以缓存，行为永远是最新的
+```
+
+同时缓存必须在**语言或会话切换时清空**（`t` / `sessionKey`），否则旧语言文案会一直
+留在缓存里；把它们放进签名也可以，但那样每次切语言都要全量失效，不如直接清。
+
+#### 顺带：搜索淡化从"每个卡片一个属性"改成"容器一个属性"
+
+`data-seek-dim` 原来写在每个 station 上，所以**第一次按键**（`searching` 由 false 变
+true）会让 900 张卡片全部失效——单这一步就要 2.4 秒。改成：
+
+- 容器上 `data-searching="true"`（listbox 和 minimap 各一个）
+- 样式用 `.dstv_listbox[data-searching=true] .dstv_station:not([data-dim=true]):not([data-match=true])`
+- 卡片只保留 `data-match`
+
+`searching` 于是完全退出卡片签名，第一次按键从 2365 ms 降到 275 ms。
+修完之后再算一次：**16–26 ms**（300 站）。
+
+#### 补上了一块从没测过的功能
+
+`加载更早历史` 的按钮存在性测过，但**"真的把更早的一页插进来会怎样"从没测过**。
+而那正是所有索引都会平移的时刻（`aria-label` 的 `第 N / M`、`data-station-idx`、
+锚点键）。
+
+新增的第 19 组：造 10 轮 → 选中第 6 个 → 再塞进 10 轮更早的，然后断言
+
+1. station 数从 20 变 40；
+2. **读者仍停在同一个站**（按轮次号比对，索引必须变而轮次不能变）；
+3. 编号全部重算（`/ 40`），`data-station-idx` 仍是 `0..N-1`。
+
+实测行为是对的：选中项从 index 5 移到 25，轮次 103 保持不变，首站标签从
+`1 / 20` 变成 `1 / 40`。
+
+补这一组时还修了一处**探针自身的副作用**：这一组把整个快照换掉了，却没还原，
+导致后面英文 pass 找不到「原始请求」标签——**恢复时必须连 `requests` 一起还原**，
+只还原 `eventNodes` 是不够的（没有请求就没有那个标签）。
+
+#### 一处诚实的空白
+
+签名里的 `i`（位置）目前**没有独立守卫**：所有能改变位置的真实路径（prepend）同时
+也会改变 `N`，而 `N` 在签名里，所以把 `i` 删掉的变异**仍然是绿的**。`i` 留着是对的
+（位置确实影响 `aria-label`、`data-station-idx`、`tabIndex`），但要构造"位置变、
+N 不变、站点集合不变"的场景只能靠人为重排，不真实。所以这里只有"代码是对的"，
+没有"变异会红"。
+
+#### 教训
+
+1. **先量再改。** 第一次上 `React.memo` 反而慢 50%，因为没搞清瓶颈是"重建元素"而不是
+   "重渲染组件"。用 `--cpu-prof` 定位到 fold 只占 27 ms / 900 ms，剩下的全在 React。
+2. **缓存 = 把正确性押在签名上。** 每个被缓存元素读取的输入都必须在签名里，包括
+   "我没想到会变"的那种（tab 停靠点、minimap 高亮）。两次都是探针抓的。
+3. **不要在缓存元素里捕获闭包。** 用 ref 转发，元素可以复用而行为永远是最新的。
+4. **性能优化最容易顺手漏掉功能测试。** 这次是在优化过程中才发现「加载更早历史」
+   从来没有真正被测过——而它恰好是所有索引平移的源头。
