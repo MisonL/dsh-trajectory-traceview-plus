@@ -882,5 +882,42 @@
 		if (document.querySelectorAll("[role=option]").length === 0) fail("the healthy window did not come back after the long-text check");
 	}
 
+	// 21) A BLOCK WITH NO `kind`. README §12 promises unknown data is NAMED, not guessed at.
+	// The label used to be `${t("block.unknown")} · ${String(b.kind)}`, which renders the
+	// literal word "undefined" when the kind is missing — found by feeding a real session
+	// through the panel (315 of 695 station labels carried it). A future kind must still be
+	// named; a MISSING kind must not be called "undefined" (§13.73).
+	{
+		window.__store.set({
+			eventNodes: [
+				{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: "go" }] },
+				{
+					kind: "assistant", seq: 2, time: 2, turn: 1, step: 1, messageId: "m1",
+					blocks: [
+						{ kind: "text", text: "normal" },
+						{ text: "no kind at all" },
+						// `image` is already a KNOWN kind (it renders 「图片」), so the forward-compat
+						// half needs a kind this build genuinely does not know.
+						{ kind: "vector-embedding", data: "x" }
+					]
+				}
+			],
+			requests: [], callSchemas: {}, runningCalls: [], partial: null
+		});
+		await tick(400);
+		const body = (document.querySelector(".dstv_root") || {}).textContent || "";
+		const labels = [...document.querySelectorAll("[role=option]")].map((o) => o.getAttribute("aria-label") || "");
+		if (body.indexOf("undefined") >= 0) fail("a block with no kind put the literal word \"undefined\" on screen");
+		if (labels.some((l) => l.indexOf("undefined") >= 0)) fail("a block with no kind put \"undefined\" into a station's accessible name");
+		if (body.indexOf("未知内容") < 0) fail("an unrecognised block rendered nothing at all — it must be named");
+		// A FUTURE kind must still be named, or the placeholder above would be a regression
+		// dressed as a fix.
+		if (body.indexOf("vector-embedding") < 0) fail("a future block kind is no longer named (expected \"未知内容 · vector-embedding\")");
+		info.unknownBlock = "ok";
+
+		window.__store.set(Object.assign({ partial: null }, healthySnap));
+		await tick(300);
+	}
+
 	return JSON.stringify({ failures, info });
 })()

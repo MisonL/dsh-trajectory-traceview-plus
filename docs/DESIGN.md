@@ -10068,3 +10068,89 @@ const mix = (v) => { ... for (let i = 0; i < str.length; i += 1) h = ((h ^ str.c
    但那个可读性从没被打印过——代价是每帧几 MB 分配。
 3. **缓存的正确性押在"覆盖完整性"上**，所以必须有一个"深改一个字符"的断言，
    否则"只哈希前缀"这种优化会在评审里看起来很合理。
+
+### 13.74 真实数据把「undefined」送进了无障碍名称（2026-11-26）
+
+#### 怎么发现的
+
+§13.73 那次真实会话渲染里，最后一条 station 的 `aria-label` 是：
+
+```
+695 / 695，步骤 6，轮次 67，未知内容 · undefined
+```
+
+不是样式问题，是**读屏用户会听到"未知内容 · undefined"**。
+
+用真实快照在 Node 里跑 `deriveTraceTree` + `stationAriaLabel` 扫了一遍：
+**695 个站点里有 315 个**的标签带 `undefined`。
+
+#### 原因
+
+```js
+st.cells.push({ ..., text: `${t("block.unknown")} · ${String(b.kind)}` });
+```
+
+这条分支本来是为**未来新增的块类型**准备的（`image`/`other` 就是这么进来的），
+写法对"未来的 kind"是对的。但 **kind 完全缺失**时 `String(undefined)` 就是那五个字母。
+
+两种情况必须分开：
+
+| 情况 | 应该显示 |
+|---|---|
+| 未来的 kind（`{kind:"vector-embedding"}`） | `未知内容 · vector-embedding` ← **命名它** |
+| kind 缺失/空（`{text:"..."}`） | `未知内容` ← **不要编一个名字** |
+
+第二种是**畸形记录**，不是新特性。把它叫 "undefined" 比什么都不说更糟。
+
+#### 修法
+
+```js
+function unknownBlockLabel(b, t) {
+	const base = t("block.unknown");
+	const kind = b !== null && b !== void 0 ? b.kind : void 0;
+	if (typeof kind !== "string" || kind === "") return base;
+	return `${base} · ${kind}`;
+}
+```
+
+两处（durable 块和 streaming 块）都换掉。修复后同一份真实快照：**0 / 695**。
+
+#### 断言（第 21 组）
+
+一个 step 里塞三种块：正常 text、**没有 kind** 的、**未来 kind** 的。断言
+
+1. 页面上不出现字面量 `undefined`；
+2. 任何 `aria-label` 里也不出现；
+3. 未知块必须被"说出来"（`未知内容` 存在）——否则这个修复就变成了"把未知块静默丢弃"；
+4. **未来的 kind 仍要被命名**（`vector-embedding` 出现在文字里）——否则第 3 条会被
+   "一律只显示『未知内容』"满足，那等于又退回不命名。
+
+第 4 条是这组的重心：**只测"不出现 undefined"会诱导出一个更差的实现。**
+
+| 变异 | 结果 |
+|---|---|
+| 恢复 `` `${base} · ${String(kind)}` `` | `a block with no kind put the literal word "undefined" on screen` |
+
+#### 顺带修了一处文档与行为不符
+
+真实数据里按 `End` 之后 `aria-selected` 全为 false（选中数 -1），我一度当成 bug。
+读代码 + 读探针发现**那是设计**：`toEnd()` 把 `revealed` 设回 `null`，也就是
+「显示全部 / 回到总览」，`action.toEnd` 的界面文案本来就写的是「显示全部」。
+
+但 README §7 的表格写的是「`Home` / `End` 跳到开头 / 结尾」——**按这句读，End 应该
+选中最后一个站点**。行为没错，文档错了。拆成两行写清楚：
+
+| 键 | 行为 |
+|---|---|
+| `Home` | 跳到第一个站点（选中它） |
+| `End` | 显示全部：回到总览，不再选中任何站点（**不是**"跳到最后一个站点"） |
+
+#### 教训
+
+1. **"为未来准备"的分支同样要处理"畸形输入"。** 同一个 `else` 里，`kind` 存在但未知
+   和 `kind` 根本不存在，是两种输入、两种文案。
+2. **`String(undefined)` 是这类事故的固定配方**，而它出现在一个会进 `aria-label` 的
+   字符串里——CI 的静态检查看不见，只有把真实数据渲染出来才看得见。
+3. **修 bug 的断言要成对。** 只断言"不出现 undefined"会奖励"全部显示未知内容"，
+   所以必须同时断言"未来的 kind 仍被命名"。
+4. **行为看起来像 bug、文档看起来像 bug 时，先确认哪个是坏的。** 这次是文档。

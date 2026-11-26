@@ -194,7 +194,8 @@ Open any session with an AI execution trace → a "Trace View" tab appears next 
 | Key | Action |
 |---|---|
 | `←` / `→` | previous / next station |
-| `Home` / `End` | jump to the start / end |
+| `Home` | jump to the first station (and select it) |
+| `End` | show all: back to the overview with nothing selected (NOT "jump to the last station") |
 | `Space` | play / pause replay |
 | `PageUp` / `PageDown` | previous / next turn start |
 | `/` or `f` | focus the search box |
@@ -257,7 +258,7 @@ The tests run the helper region against mock snapshots covering: tree building /
 **What needs a real browser** (`react-dom/server` cannot see scroll, focus, clipboard, intervals or layout):
 
 ```powershell
-node scripts/browser-check.mjs          # builds the harness; 214 assertions over 31 recorded groups
+node scripts/browser-check.mjs          # builds the harness; 218 assertions over 32 recorded groups
 node scripts/browser-check.mjs --shots  # saves screenshots and adds 1 more group / 4 assertions: 375px overflow (30 total)
 ```
 
