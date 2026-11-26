@@ -10,6 +10,7 @@
  * Deliberately NOT part of the smoke suite: it needs a browser.
  *   node scripts/browser-harness.mjs            # writes test/browser/harness.html
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -78,11 +79,23 @@ for (const [id, rel] of Object.entries(MODULES)) {
 }
 
 const client = read("lib/client.js");
+/**
+ * Stamp the bundle this page was built from.
+ *
+ * Manual browser probing goes: edit `src/` -> `build-client.mjs` -> open harness.html. That
+ * skips `browser-harness.mjs`, so the page keeps an OLD inlined bundle and every measurement
+ * or fix-verification silently describes the previous revision. It cost a real debugging
+ * cycle (§13.75): a correct cache fix looked broken because the page predated it.
+ *
+ * `harness-stamp.mjs` compares this stamp against the current `lib/client.js`.
+ */
+const clientHash = createHash("sha256").update(client).digest("hex").slice(0, 16);
 const fixture = read("test/browser/fixture.js");
 
 const html = `<!doctype html>
 <html lang="zh-CN" data-ds-dark-theme="false">
 <head>
+<script>window.__HARNESS_CLIENT_HASH__ = "${clientHash}";</script>
 <meta charset="utf-8">
 <title>TraceMapView harness</title>
 <style>

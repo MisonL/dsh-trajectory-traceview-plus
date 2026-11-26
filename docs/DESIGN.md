@@ -10350,3 +10350,53 @@ if (cardElCache.current.size > stations.length || tickElCache.current.size > sta
    roving tab stop 还是错的——因为两次是"分别想起来"的。正确做法是先把
    "所有依赖 `revealed` 的渲染分支"列一遍，再逐个对照签名。
 3. **审查者的价值在于它读渲染函数、我读缓存代码。** 这两处的输入都不在我改的那几行里。
+
+### 13.77 harness.html 内联旧 bundle 这个坑，加一道门禁（2026-11-26）
+
+#### 踩的是哪一个
+
+手工验证的流程是：
+
+```
+改 src/  ->  node scripts/build-client.mjs  ->  agent-browser open test/browser/harness.html
+```
+
+**`build-client.mjs` 只写 `lib/client.js`；`harness.html` 是 `browser-harness.mjs` 生成的，
+里面内联了一份 bundle。** 于是第二步之后打开的页面跑的是**上一个版本**的代码。
+
+这次的具体后果：cell 内容进签名这个修复，验证时显示"没生效"，卡片仍然显示旧文本。
+差一步就把一个**正确的修复**回滚掉了。第二轮重测才发现问题在测的东西上。
+
+`browser-check.mjs` 每次都重新生成 harness，所以自动化路径永远不会遇到这个坑——
+**只有手工验证会遇到**，而手工验证恰恰是最需要信任的时候。
+
+#### 做法
+
+1. `browser-harness.mjs` 把 bundle 的 sha256 前 16 位写进页面：
+   `<script>window.__HARNESS_CLIENT_HASH__ = "…"</script>`
+2. 新脚本 `scripts/harness-stamp.mjs` 比对页面里的指纹和当前 `lib/client.js`：
+   - 页面不存在 → 退出 0（CI 不生成 harness）
+   - 没有指纹（这道门禁之前生成的旧页面）→ 退出 1，明确说"它早于这道门禁"
+   - 指纹不一致 → 退出 1，并打印两个指纹
+   - 一致 → 退出 0
+3. `build-client.mjs` 写完后顺手跑一次 `harness-stamp --quiet`，不一致就打印一行提示——
+   **在制造陈旧的那一刻就告诉人**，而不是等人去怀疑自己的修复。
+4. 加进 `npm run check`（8 步 → 9 步）。
+
+#### 验证
+
+| 状态 | 结果 |
+|---|---|
+| 刚生成 harness | `harness-stamp: OK (b6b3ce9f58b3bc86)`，退出 0 |
+| 改一行 `src/` 后只跑 build | `build-client: note — harness.html is now stale …`，stamp 退出 1 |
+| 重新生成 harness | 退出 0 |
+| 旧页面（没有指纹） | `STALE — the page carries no bundle stamp, so it predates this guard` |
+
+#### 教训
+
+1. **让"测错东西"变得不可能，比让人记住"要重新生成"。** 这条流程里的每一步都正确，
+   组合起来却是错的——只有一道比对指纹的门禁能挡住。
+2. **在错误发生的那一刻提示。** 把检查挂在 `build-client` 后面（制造陈旧的时刻），
+   比挂在 `open harness.html` 前面（已经晚了）有用得多。
+3. **同一个坑值得进 DESIGN。** 否则下一个人（或下一轮的我）会再踩一次，而这次差点
+   丢掉的是一个正确的修复。

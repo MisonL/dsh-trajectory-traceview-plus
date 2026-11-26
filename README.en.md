@@ -248,8 +248,8 @@ node scripts/provenance.mjs
 Editing `src/` without rebuilding makes `--check` fail and the smoke suite report `BUILD1`. `lib/index.js` (host half) is a no-op stub; `lib/client.js` is a classic script (`window.__ModuleLoader__.load`) served directly by the client module system.
 
 ```powershell
-npm run check              # 8 steps: build --check / provenance --check / version-check / doc-ref-check
-                           #          doc-heading-check / smoke / readme-numbers / shortcut-check
+npm run check              # 9 steps: build --check / provenance --check / version-check / doc-ref-check
+                           #          doc-heading-check / smoke / readme-numbers / shortcut-check / harness-stamp
 npm test                   # smoke only
 ```
 
@@ -338,6 +338,6 @@ Three things guard the release, and all live in CI (`.github/workflows/check.yml
 - version / tag disagreement — `node scripts/version-check.mjs` fails (`F1`)
 - a missing `CHANGELOG.md` entry for the version (`F2`), or a version that goes backwards relative to an existing tag (`F3`)
 
-CI runs those 9 gates plus an install step (`npm ci --include=dev`): `build-client --check`, `node --check lib/client.js`, `provenance --check`, `version-check`, `doc-ref-check`, `doc-heading-check`, smoke, readme-numbers, shortcut-check. `npm run check` runs 8 of them locally (build, provenance, version-check, doc-ref-check, doc-heading-check, smoke, readme-numbers, shortcut-check) — everything but `node --check lib/client.js`; run `browser-check` too before releasing — see §11.
+CI runs those 9 gates plus an install step (`npm ci --include=dev`): `build-client --check`, `node --check lib/client.js`, `provenance --check`, `version-check`, `doc-ref-check`, `doc-heading-check`, smoke, readme-numbers, shortcut-check, harness-stamp. `npm run check` runs 9 of them locally (build, provenance, version-check, doc-ref-check, doc-heading-check, smoke, readme-numbers, shortcut-check, harness-stamp) — everything but `node --check lib/client.js`; run `browser-check` too before releasing — see §11.
 
 **Those numbers have a gate of their own**: `readme-numbers` derives the true values from `check.yml`, `package.json` and `test/browser/probe.js`, then checks both READMEs against them. A number written down twice will eventually disagree with itself (§13.37).

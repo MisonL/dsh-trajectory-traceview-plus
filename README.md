@@ -264,8 +264,8 @@ node scripts/provenance.mjs
 改了 `src/`却忘了重建时，`--check`会失败，`test/smoke.test.cjs`也会报 `BUILD1`。`lib/index.js`（宿主半部）是无操作桩；`lib/client.js`是经典脚本（`window.__ModuleLoader__.load`），由客户端模块系统直接服务。
 
 ```powershell
-npm run check              # 8 步：build --check / provenance --check / version-check / doc-ref-check
-                           #       doc-heading-check / smoke / readme-numbers / shortcut-check
+npm run check              # 9 步：build --check / provenance --check / version-check / doc-ref-check
+                           #       doc-heading-check / smoke / readme-numbers / shortcut-check / harness-stamp
 npm test                   # 只跑 smoke
 ```
 
@@ -338,7 +338,7 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 # 1-3 改内容
 #   改 package.json 的 version、补 CHANGELOG.md 的版本条目
 node scripts/provenance.mjs              # 4. 刷新来源清单（新增/改名文件后必须重跑）
-npm run check                            # 5. 8 步门禁，全绿再往下
+npm run check                            # 5. 9 步门禁，全绿再往下
 git add -A; git commit -m "..."          # 6.
 git push origin main                     # 7.
 git tag -a v0.11.4 -m "..."              # 8.
@@ -365,8 +365,9 @@ node scripts/release-status.mjs          # 12. 四处对齐了吗？（tag / Rel
 `version-check`、`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers、shortcut-check
 （前面还有一步 `npm ci --include=dev` 装依赖）。
 
-本地 `npm run check` 跑其中 8 步（`build-client --check`、`provenance --check`、`version-check`、
-`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers、shortcut-check）——只差 CI 里的
+本地 `npm run check` 跑其中 9 步（`build-client --check`、`provenance --check`、`version-check`、
+`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers、shortcut-check、harness-stamp 共 9 项，
+最后一项确认手工打开 `harness.html` 前它没有内联旧 bundle）——只差 CI 里的
 `node --check lib/client.js`，够用于日常提交；发布前再按 §11 把 `browser-check` 也跑一遍。
 
 **这些数字本身也有门禁**：`readme-numbers` 直接从 `check.yml`、`package.json` 和

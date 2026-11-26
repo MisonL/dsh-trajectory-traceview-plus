@@ -37,6 +37,7 @@
 - `scripts/doc-heading-check.mjs`
 - `scripts/doc-ref-check.mjs`
 - `scripts/guard-check.mjs`
+- `scripts/harness-stamp.mjs`
 - `scripts/provenance.mjs`
 - `scripts/readme-numbers.mjs`
 - `scripts/release-status.mjs`

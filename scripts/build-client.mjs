@@ -17,6 +17,7 @@
  *   node scripts/build-client.mjs           # write lib/client.js
  *   node scripts/build-client.mjs --check   # fail if lib/client.js is stale
  */
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,4 +94,12 @@ if (process.argv.includes("--check")) {
 	fs.mkdirSync(path.dirname(OUT), { recursive: true });
 	fs.writeFileSync(OUT, built);
 	console.log(`build-client: wrote ${path.relative(ROOT, OUT)} (${built.split("\n").length} lines)`);
+	// A hand-built bundle makes any EXISTING harness.html stale, and a stale page silently
+	// answers questions about the previous revision. Say so at the moment it happens (§13.75).
+	{
+		const stamp = spawnSync(process.execPath, [path.join(ROOT, "scripts/harness-stamp.mjs"), "--quiet"], { stdio: "ignore" });
+		if (stamp.status !== 0) {
+			console.log("build-client: note — test/browser/harness.html is now stale; run `node scripts/browser-harness.mjs` before probing by hand");
+		}
+	}
 }
