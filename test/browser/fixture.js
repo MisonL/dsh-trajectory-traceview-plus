@@ -150,6 +150,20 @@
 		host.lang = lang === "en" ? "en" : "zh";
 		window.__remount();
 	};
+	/**
+	 * Switch the dictionary WITHOUT remounting — the shape a real host actually has.
+	 *
+	 * `__setLocale` above remounts only because the fixture hands the component one stable
+	 * `t` closure; a real host swaps the locale binding, so `t` gets a NEW identity while the
+	 * component instance stays alive. That is the case the element caches have to survive
+	 * (they are keyed by station content and would otherwise keep the previous language's
+	 * text), and remounting hides it completely: a fresh instance starts with empty caches.
+	 */
+	window.__setLocaleInPlace = function (lang) {
+		host.lang = lang === "en" ? "en" : "zh";
+		viewProps.t = host.bind("trajectoryTraceView");
+		window.__render();
+	};
 
 	/* ---- helpers the tests drive from outside ---- */
 	/**

@@ -96,5 +96,41 @@
 	if (!/轮次|步骤/.test((document.querySelector(".dstv_root") || {}).textContent || "")) fail("switching back to zh did not restore the Chinese chrome");
 	info.localeSwitch = "ok";
 
+	// 22b) THE SAME SWITCH WITHOUT A REMOUNT — the shape a real host has. `__setLocale` above
+	// remounts (the fixture hands the component one stable `t`, so it has to), which starts the
+	// element caches empty and proves nothing about an in-place switch.
+	//
+	// What this asserts, and what it does NOT: it proves the user-visible outcome — after `t`
+	// changes identity on a live instance, no card keeps the old language's chrome. It does
+	// NOT isolate the `cacheScopeRef` clear in the view: disabling that clear still passes,
+	// because the element signature already hashes translated station fields (`label`, `meta`)
+	// and the fold is memoised on `t`, so a new `t` produces new signatures anyway. The clear
+	// stays as defence in depth (a future field could stop being translated at fold time), and
+	// §13.78 records that the mutation does not reach it.
+	{
+		window.__setLocaleInPlace("en");
+		await waitFor(() => /Turn|Step|Station/.test((document.querySelector(".dstv_root") || {}).textContent || ""));
+		const text = (document.querySelector(".dstv_root") || {}).textContent || "";
+		if (!/Step|Station|Turn/.test(text)) fail("an in-place locale switch did not translate the panel at all");
+		// Only the CHROME may be checked: the fixture's conversation text is Chinese on
+		// purpose and must survive the switch. Station labels are the stale parts (they come
+		// from cached elements, and their position/kind/turn segments are translated), so check
+		// the label for the Chinese terms those segments use — none of which appear in the
+		// fixture's DATA.
+		// Terms used by the LABEL only, and none of them occur in the fixture's DATA (the
+		// compaction station's text says 「压缩成摘要」, so 「压缩」 would be a false positive).
+		const chromeTerms = /步骤|轮次|用户|未知事件/;
+		const labelLeaks = [...document.querySelectorAll("[role=option]")]
+			.map((o) => o.getAttribute("aria-label") || "")
+			.filter((l) => chromeTerms.test(l));
+		if (labelLeaks.length > 0) fail("after an in-place switch to en, " + labelLeaks.length + " station labels kept the previous language's chrome: " + JSON.stringify(labelLeaks.slice(0, 2).map((l) => l.slice(0, 50))));
+		// And the detail panel, which is NOT cached and therefore the control case.
+		const panelText = (document.querySelector(".dstv_detail") || {}).textContent || "";
+		if (chromeTerms.test(panelText)) fail("the (uncached) detail panel kept Chinese chrome after an in-place switch: " + JSON.stringify(panelText.slice(0, 80)));
+		info.localeSwitchInPlace = "ok";
+		window.__setLocaleInPlace("zh");
+		await tick(120);
+	}
+
 	return JSON.stringify({ failures, info });
 })()
