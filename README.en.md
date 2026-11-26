@@ -136,7 +136,7 @@ dsh-trajectory-traceview-plus/   # repo root (directory name == npm package name
 Install from npm (recommended — **pin the exact version**):
 
 ```powershell
-dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.4
+dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.5
 ```
 
 > **Why not `@latest`**: `dsh plugin` forwards to pnpm, and **pnpm 12 ships a supply-chain delay** (`minimumReleaseAge`, default **1440 minutes = 24 hours**): a version published less than a day ago is not selected by `@latest`, and pnpm **silently falls back to the previous release** — no warning at all. Right after 0.11.0 was published, `pnpm add pkg@latest` installed 0.10.0, which the newer DSH hosts skip entirely. An exact version has no such ambiguity (verified with both cold and warm caches).
@@ -148,10 +148,10 @@ dsh plugin --profile web add dsh-trajectory-traceview-plus@0.11.4
 Install from GitHub (**always pin the tag**):
 
 ```powershell
-dsh plugin --profile web add "github:MisonL/dsh-trajectory-traceview-plus#v0.11.4"
+dsh plugin --profile web add "github:MisonL/dsh-trajectory-traceview-plus#v0.11.5"
 ```
 
-> **Why the `#v0.11.4` matters**: a `github:` spec without a ref installs the **default branch HEAD**, not any released version. This repository keeps committing after a release (v0.11.0 was followed by five docs/scripts commits), so an unpinned install can hand you different code tomorrow while still reporting version 0.11.0. Pinning the tag is what makes "installed" and "released" the same code.
+> **Why the `#v0.11.5` matters**: a `github:` spec without a ref installs the **default branch HEAD**, not any released version. This repository keeps committing after a release (v0.11.0 was followed by five docs/scripts commits), so an unpinned install can hand you different code tomorrow while still reporting version 0.11.0. Pinning the tag is what makes "installed" and "released" the same code.
 
 Then **restart `dsh web`** to take effect.
 
@@ -320,10 +320,10 @@ node scripts/provenance.mjs              # 4. refresh the provenance list (rerun
 npm run check                            # 5. the 7 local gates; all green before going further
 git add -A; git commit -m "..."          # 6.
 git push origin main                     # 7.
-git tag -a v0.11.4 -m "..."              # 8.
-git push origin v0.11.4                  # 9.
+git tag -a v0.11.5 -m "..."              # 8.
+git push origin v0.11.5                  # 9.
 npm publish                              # 10. runs prepublishOnly -> the whole check again
-gh release create v0.11.4 --notes-file … # 11. the badge reads the Release, not the tag
+gh release create v0.11.5 --notes-file … # 11. the badge reads the Release, not the tag
 
 node scripts/release-status.mjs          # 12. do all four agree? (tag / Release / npm metadata / tarball)
 ```
