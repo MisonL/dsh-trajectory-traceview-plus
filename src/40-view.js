@@ -1340,19 +1340,51 @@
 			handlersRef.current.seek = seek;
 			handlersRef.current.keyDown = stationOnKeyDown;
 
-			const stationSig = (s) => (s == null ? "" : [
-				s.kind, s.id, s.label, s.who, s.text, s.displayText, s.summary, s.message,
-				s.name, s.args, s.payload, s.eventType, s.replace, s.retry,
-				s.isError, s.hasError, s.live, s.synthetic, s.tag,
-				s.time, s.startMs, s.endMs, s.seq, s.toolMs, s.maxToolMs,
-				s.outcomeText, s.outcomeKind,
-				Array.isArray(s.meta) ? s.meta.join("\u0001") : s.meta,
+			// FNV-1a over the fields the card reads, accumulated WITHOUT building a
+			// concatenated string. The first version joined every field into one string —
+			// harmlessly fast on the fixture, but a real 1000-node window carries ~1.1 MB of
+			// tool output, and joining that per station per render made a keystroke cost
+			// 1.17 s again. A rolling hash over each field is linear either way, but it
+			// allocates nothing (§13.73).
+			const stationSig = (s) => {
+				if (s == null) return "";
+				let h = 2166136261;
+				const mix = (v) => {
+					if (v === null || v === void 0) { h = (h ^ 31) * 16777619 >>> 0; return; }
+					if (typeof v === "number") {
+						h = (h ^ (v | 0)) * 16777619 >>> 0;
+						h = (h ^ (Math.floor(v * 1000) | 0)) * 16777619 >>> 0;
+						return;
+					}
+					if (typeof v === "boolean") { h = (h ^ (v ? 1 : 2)) * 16777619 >>> 0; return; }
+					const str = String(v);
+					h = (h ^ str.length) * 16777619 >>> 0;
+					for (let i = 0; i < str.length; i += 1) h = ((h ^ str.charCodeAt(i)) * 16777619) >>> 0;
+				};
+				mix(s.kind); mix(s.id); mix(s.label); mix(s.who); mix(s.text);
+				mix(s.displayText); mix(s.summary); mix(s.message); mix(s.name);
+				mix(s.args); mix(s.payload); mix(s.eventType); mix(s.replace); mix(s.retry);
+				mix(s.isError); mix(s.hasError); mix(s.live); mix(s.synthetic); mix(s.tag);
+				mix(s.time); mix(s.startMs); mix(s.endMs); mix(s.seq); mix(s.toolMs); mix(s.maxToolMs);
+				mix(s.outcomeText); mix(s.outcomeKind);
+				if (Array.isArray(s.meta)) { mix(s.meta.length); for (const m of s.meta) mix(m); }
+				else mix(s.meta);
 				// Not just the length: the preview shows a tool marker, the error flag and the
 				// running state, so a same-length edit must still invalidate the card.
-				Array.isArray(s.cells)
-					? s.cells.map((c) => `${c.kind}${c.isError === true ? "!" : ""}${c.running === true ? "*" : ""}`).join(",")
-					: -1
-			].map((v) => (v === null || v === void 0 ? "" : String(v))).join("\u0000"));
+				if (Array.isArray(s.cells)) {
+					mix(s.cells.length);
+					for (const c of s.cells) { mix(c.kind); mix(c.isError === true); mix(c.running === true); }
+				} else mix(-1);
+				return h.toString(36);
+			};
+			// One signature per station per render, computed on first use: each card needs its
+			// own and its neighbour's, and computing them twice doubled the hashing cost.
+			const stationSigs = [];
+			const sigOf = (i) => {
+				if (i < 0) return "";
+				if (stationSigs[i] === void 0) stationSigs[i] = stationSig(stations[i]);
+				return stationSigs[i];
+			};
 			const renderStationCard = (s, cardKey) => {
 				if (s.kind === "user") {
 					return jsxs("div", {
@@ -1639,7 +1671,7 @@
 									// N, found-in-search). If none of those moved, hand React the element
 									// it already rendered and it skips the whole subtree.
 									const sig = [
-										stationSig(s), stationSig(prevStation), String(i), String(N),
+										sigOf(i), sigOf(i - 1), String(i), String(N),
 										reached ? "1" : "0", isActive ? "1" : "0",
 										matched ? "1" : "0", clockAxis ? "1" : "0",
 										// The overview state is its own dependency: station 0 is the roving

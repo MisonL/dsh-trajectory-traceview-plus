@@ -846,5 +846,41 @@
 		if (document.querySelectorAll("[role=option]").length === 0) fail("the healthy window did not come back after the paging checks");
 	}
 
+	const healthySnap = JSON.parse(JSON.stringify({
+		eventNodes: window.__store.value.eventNodes,
+		requests: window.__store.value.requests,
+		callSchemas: window.__store.value.callSchemas,
+		runningCalls: window.__store.value.runningCalls
+	}));
+
+	// 20) CACHE vs LONG TEXT. The element cache decides "unchanged" from a signature, and a
+	// real window carries ~1 MB of tool output. A signature that sampled only a prefix would
+	// silently freeze a long body, so this changes ONE character deep inside a 20 000-char
+	// body and requires the card to update (§13.73).
+	{
+		const big = (mark) => "x".repeat(10000) + mark + "x".repeat(10000);
+		const snap = (mark) => ({
+			eventNodes: [
+				{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: big(mark) }] },
+				{ kind: "assistant", seq: 2, time: 2, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "text", text: "ok" }] }
+			],
+			requests: [], callSchemas: {}, runningCalls: [], partial: null
+		});
+		window.__store.set(snap("SENTINEL-A"));
+		await tick(400);
+		const first = (document.querySelector(".dstv_root") || {}).textContent || "";
+		if (first.indexOf("SENTINEL-A") < 0) fail("the 20k-char body was not rendered at all");
+		window.__store.set(snap("SENTINEL-B"));
+		await tick(400);
+		const second = (document.querySelector(".dstv_root") || {}).textContent || "";
+		if (second.indexOf("SENTINEL-B") < 0) fail("changing one character deep inside a long body did not update the card — the signature is not covering the whole string");
+		if (second.indexOf("SENTINEL-A") >= 0) fail("the old long body is still on screen next to the new one");
+		info.longText = "ok";
+
+		window.__store.set(Object.assign({ partial: null }, healthySnap));
+		await tick(300);
+		if (document.querySelectorAll("[role=option]").length === 0) fail("the healthy window did not come back after the long-text check");
+	}
+
 	return JSON.stringify({ failures, info });
 })()
