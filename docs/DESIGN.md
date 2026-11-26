@@ -10154,3 +10154,199 @@ function unknownBlockLabel(b, t) {
 3. **修 bug 的断言要成对。** 只断言"不出现 undefined"会奖励"全部显示未知内容"，
    所以必须同时断言"未来的 kind 仍被命名"。
 4. **行为看起来像 bug、文档看起来像 bug 时，先确认哪个是坏的。** 这次是文档。
+
+### 13.75 Codex 审查：元素缓存漏了 cell 内容，以及一个 hook 位置地雷（2026-11-26）
+
+把 §13.72–13.74 这批改动交给 Codex（Orca worker）只读审查，重点问"签名是否覆盖卡片真正
+读的所有输入"。结论：**漏了 cell 内容**。
+
+#### 找到了什么
+
+`renderStationCard` 实际渲染的是：
+
+| cell 字段 | 出现在卡片上 |
+|---|---|
+| `text` / `thinking` | 助手正文和思考摘要 |
+| `name` / `args` | 工具名和参数预览（含 `title`） |
+| `errorName` | 失败工具的错误名 |
+| `durationMs` | 耗时条宽度 |
+| `isError` / `running` | 错误/运行中标记 |
+
+而签名只哈希了 `kind` / `isError` / `running`。于是一个**已结束的步骤**，只要它的
+助手 cell 文本变了、而 kind 和两个布尔没变，卡片就会继续显示旧文本。
+
+复现（改一个 cell 的文本，其余不变）：
+
+```
+card still shows: "1✓步骤 1助手CELL-ALPHA"
+accessible name:  "2 / 2，步骤 1，轮次 1，CELL-ALPHA"
+```
+
+**为什么之前的探针没抓到**：第 18 组只验证流式内容"出现过"，没有验证"更新过"。流式之所以
+看起来正常，是因为每帧还会动别的状态（`streamTick`），碰巧让签名变了——**能用，但不是在
+正确的地方对**。
+
+#### 修法
+
+把卡片真正读的字段全部纳入哈希：
+
+```js
+for (const c of s.cells) {
+	mix(c.kind); mix(c.id);
+	mix(c.text); mix(c.thinking);
+	mix(c.name); mix(c.args); mix(c.errorName);
+	mix(c.durationMs); mix(c.isError === true); mix(c.running === true);
+}
+```
+
+`resultText` **故意不进**：卡片不渲染它，而它是最大的字段（真实会话里单条几十 KB）。
+
+新增第 22 组：只改 cell 文本，要求**卡片和它的 aria-label 同时更新**。
+变异（只哈希形状）报红：
+
+```
+✗ changing a cell's text did not update the station card (card still shows: "…CELL-ALPHA")
+✗ the station's accessible name still carries the old cell text
+```
+
+#### 顺带修掉的两件事
+
+**① 把 handler 赋值从 render 移到 layout effect。** 在 render 里写 ref 只有"惰性初始化"
+被 React 允许，而这个是**每次渲染**都写；一次被丢弃的渲染会把废弃那份闭包留下。
+
+**② 发现一个 hook 位置地雷。** `TraceMapView` 中间有一个
+
+```js
+if (N === 0) { …return jsxs("div", …骨架…); }
+```
+
+**在它下面声明的任何 `react.useXxx` 都会在空快照/加载态被跳过**，React 直接抛：
+
+```
+⚠ 这一块渲染失败  Rendered fewer hooks than expected.
+This may be caused by an accidental early return statement.
+```
+
+整块面板变成错误卡，看起来像渲染 bug，其实是 hook 顺序 bug。把 layout effect 移到那个
+早退**之上**即可。新增门禁 **Z2**：静态检查 `if (N === 0)` 早退之后不得出现 `react.use*`。
+变异验证：在早退下面插一个 `useEffect` → `Z2 a React hook is declared below the ... early return`。
+
+（同一次改动也先被 **Z1** TDZ 门禁抓到过一次——`handlersRef` 在声明之前被 use。）
+
+#### 性能：签名改成"每棵树算一次"
+
+把 cell 正文纳入哈希后，真实数据 `warm` 从 30 ms 变成 **105 ms**——因为**每次渲染**都
+重新哈希 1.11 MB 文本。
+
+`stations` 数组的**引用**只在 fold 产生新树时变化，所以用它做缓存键：
+
+```js
+const sigPack = sigCacheRef.current;
+if (sigPack.arr !== stations) { sigPack.arr = stations; sigPack.sigs = stations.map(stationSig); }
+```
+
+按键/回放帧拿到的是同一棵树 → 一次都不重算。回到 **21–22 ms**（900 站按键），
+真实数据整体重折时仍是 84 ms（那是真的重新算了一遍，理应如此）。
+
+用 ref 而不是 `useMemo`，正是因为这段代码在 `if (N === 0)` 早退**下面**——加 hook 就会
+踩上面那个地雷。
+
+#### 复现环境的坑（值得记）
+
+中途用 `build-client.mjs` 重建后直接打开 `test/browser/harness.html` 测，看到"修复无效"。
+原因是 **harness.html 由 `scripts/browser-harness.mjs` 生成并内联了旧 bundle**；
+`build-client.mjs` 只写 `lib/client.js`。手工验证前必须重新生成 harness，否则测的是上一个
+版本。这一条差点让我把正确的修复回滚掉。
+
+#### 教训
+
+1. **"缓存命中"的正确性只能由"每个被读取的输入"保证**，而"卡片读了什么"必须去渲染函数
+   里逐行数，不能凭印象。数漏一个 `c.text` 就是一个用户可见的陈旧渲染。
+2. **同一个组件里，hook 的位置是有语义的**：早退之上和之下完全两回事。这类 bug 的表现
+   （整块面板报错）和原因（hook 少了）相距很远，所以值得一条静态门禁。
+3. **性能优化会改动代码结构，而结构改动会碰到与性能无关的地雷**（这次是 hook 位置）。
+   所以每批优化都要跑完整探针，不能只跑性能基准。
+4. **手工验证也要确认测的是新代码。** 生成物内联旧 bundle 这种坑，会让你怀疑一个正确的
+   修复。
+
+### 13.76 审查又抓到两个"不在 station 上"的缓存输入（2026-11-26）
+
+§13.75 修完 cell 内容之后，同一份审查指出了两处**从 station 对象上根本看不出来**的输入。
+两处都复现成功、都补了断言、都用变异验证过。
+
+#### ① minimap 的漫游 Tab 停靠点有两个分支
+
+```js
+tabIndex: (revealed !== null && i === R - 1) || (revealed === null && i === 0) ? 0 : -1
+```
+
+签名里我只哈希了**选中分支** `revealed !== null && i === R - 1`，忘了**总览分支**
+`revealed === null && i === 0`。
+
+实测（选中第 5 站后枚举 `tabIndex === 0` 的刻度）：
+
+| 状态 | 之前 | 之后 |
+|---|---|---|
+| 总览 | `[0]` | `[0]` |
+| 选中第 5 站 | **`[0, 5]`** | `[5]` |
+| 再选第 0 站 | `[0]` | `[0]` |
+
+两个 Tab 停靠点意味着键盘用户要多按一次 Tab，而且第一下落在"看起来没选中"的刻度上。
+更值得注意的是：**这和 §13.72 里站卡踩的是同一个坑**（`revealed === null` 是隐藏输入），
+我在卡片上修了、在刻度上又漏了一遍——同一个 bug 形状，两个地方。
+
+修法：签名里放**和 `tabIndex` 完全相同的表达式**，而不是"我记得的那个条件"。
+
+#### ② 耗时条的分母是全局最大值
+
+```js
+width: `${Math.round(cell.durationMs / Math.max(1, stats.maxToolMs || stats.toolMs) * 100)}%`
+```
+
+`stats.maxToolMs` 是**整份轨迹里最慢的一次工具调用**，不是这个站点的。签名里我哈希的是
+`s.maxToolMs` / `s.toolMs`（station 级），**分子对了、分母错了**。
+
+于是：A 站耗时 1000 ms、B 站 100 ms 时 A 的条是 100%；把 B 加到 5000 ms，正确的 A 应该
+缩到 20%，但 A 自己的字段一个都没变 → 缓存命中 → 条还是 100%。
+
+| | 第一次 | B 变慢之后 |
+|---|---|---|
+| 修复前 | `["100%", "10%"]` | **`["100%", "100%"]`**（A 陈旧） |
+| 修复后 | `["100%", "10%"]` | `["20%", "100%"]` |
+
+修法：`mix(stats.maxToolMs); mix(stats.toolMs);`——**把卡片真正读的那个变量混进去**，
+而不是它看起来"应该等价"的 station 字段。
+
+#### 顺带：缓存淘汰
+
+两张元素 map 原来只在语言/会话切换时清空。而流式站点每折一次就换成 durable 站点（新 id），
+翻页又会让所有索引平移，所以 map 只增不减，每个条目还钉着一整棵卡片子树和它的 station 闭包。
+现在每次换树时按当前 `stations` 裁剪：
+
+```js
+if (cardElCache.current.size > stations.length || tickElCache.current.size > stations.length) {
+	const live = new Set(stations.map((st) => st.id));
+	…
+}
+```
+
+（带 `size > length` 前置条件，所以稳态下不会每次渲染都建 Set。）
+
+#### 第 23 组断言
+
+两条都写进了探针，且都用变异确认会红：
+
+| 变异 | 报错 |
+|---|---|
+| 去掉总览分支 | `the overview minimap should expose exactly tick 0 as its tab stop, got []` |
+| 去掉 `stats.maxToolMs` | `the first station's bar kept its old proportion (["100%","10%"] -> ["100%","100%"]) …` |
+
+#### 教训
+
+1. **"这个字段在 station 上吗"是不够的判据。** 卡片还会读父作用域里的派生值
+   （`stats.*`）和它自己的位置（`i === R - 1`、`revealed === null`）。签名要抄的是
+   **表达式**，不是**变量名**。
+2. **同一个 bug 形状会在同一批代码里出现两次。** 站卡的 roving tab stop 修完，刻度的
+   roving tab stop 还是错的——因为两次是"分别想起来"的。正确做法是先把
+   "所有依赖 `revealed` 的渲染分支"列一遍，再逐个对照签名。
+3. **审查者的价值在于它读渲染函数、我读缓存代码。** 这两处的输入都不在我改的那几行里。

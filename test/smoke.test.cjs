@@ -3714,6 +3714,28 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		// statement-level read, which is what the TDZ bug looked like.
 		const real = offenders.filter((o) => !/\bseek used|\bbody used/.test(o));
 		if (real.length > 0) throw new Error("Z1 const read before its declaration (TDZ): " + real.slice(0, 3).join("; "));
+
+		// ---- Z2: no React hook may be declared below an early return ----------
+		// `TraceMapView` returns a skeleton early when `if (N === 0)`. A hook declared after
+		// that point is skipped on the empty/loading render, and React then aborts the whole
+		// panel with "Rendered fewer hooks than expected" — which the RenderBoundary paints
+		// as a full-panel error, so it reads like a rendering bug rather than a hook bug.
+		// This is exactly how a `useLayoutEffect` added near the element cache broke the
+		// panel on every empty/loading snapshot (§13.75).
+		{
+			const lines = src.split("\n");
+			const early = lines.findIndex((l) => /^\t{3}if \(N === 0\) \{$/.test(l));
+			if (early < 0) throw new Error("Z2 the early-return branch this guard anchors on is gone — update the guard");
+			const hooksAfter = lines
+				.map((l, i) => ({ l, i }))
+				.filter((x) => x.i > early && /react\.use[A-Z]/.test(x.l))
+				.filter((x) => !/^\s*\*/.test(x.l));
+			if (hooksAfter.length > 0) {
+				throw new Error("Z2 a React hook is declared below the `if (N === 0)` early return at line "
+					+ (early + 1) + " — it will be skipped on the empty/loading render: "
+					+ hooksAfter.slice(0, 2).map((x) => "line " + (x.i + 1)).join(", "));
+			}
+		}
 	}
 
 	// ── X1: Codex review findings, each re-proven against the real code ───────

@@ -919,5 +919,91 @@
 		await tick(300);
 	}
 
+	// 22) THE CARD READS ITS CELLS. The element cache decides "unchanged" from a signature,
+	// and the station card renders cell text, tool name/args/error and the duration bar — so
+	// all of those are cache inputs. Hashing only the cell SHAPE left a settled step showing
+	// its old text while the detail panel showed the new one (found by Codex review §13.75).
+	// This changes cell text alone and requires BOTH the card and its aria-label to follow.
+	{
+		const mk = (text) => ({
+			eventNodes: [
+				{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: "go" }] },
+				{ kind: "assistant", seq: 2, time: 2, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "text", text }] }
+			],
+			requests: [], callSchemas: {}, runningCalls: [], partial: null
+		});
+		window.__store.set(mk("CELL-ALPHA"));
+		await tick(400);
+		if (((document.querySelector(".dstv_root") || {}).textContent || "").indexOf("CELL-ALPHA") < 0) fail("the cell text was not rendered at all");
+		window.__store.set(mk("CELL-OMEGA"));
+		await tick(400);
+		const cards = [...document.querySelectorAll("[role=option]")];
+		const stepCard = cards.find((c) => (c.getAttribute("aria-label") || "").indexOf("步骤") >= 0);
+		if (stepCard === undefined) fail("no step card to check the cell update on");
+		else {
+			const text = stepCard.textContent || "";
+			const label = stepCard.getAttribute("aria-label") || "";
+			if (text.indexOf("CELL-OMEGA") < 0) fail("changing a cell's text did not update the station card (card still shows: " + JSON.stringify(text.slice(0, 60)) + ")");
+			if (label.indexOf("CELL-OMEGA") < 0) fail("the station's accessible name still carries the old cell text: " + JSON.stringify(label.slice(0, 60)));
+		}
+		info.cellUpdate = "ok";
+
+		window.__store.set(Object.assign({ partial: null }, healthySnap));
+		await tick(300);
+	}
+
+	// 23) TWO CACHE INPUTS THAT ARE NOT ON THE STATION. Both were found by review, both are
+	// invisible from the station object alone:
+	//   a) the minimap tick's tab stop has an OVERVIEW half (`revealed === null && i === 0`),
+	//      so hashing only the active half leaves tick 0 tabbable next to the selection;
+	//   b) the duration bar divides by a GLOBAL maximum (`stats.maxToolMs`), so a card whose
+	//      own fields are unchanged must still re-render when a DIFFERENT station gets slower.
+	{
+		const tickStops = () => [...document.querySelectorAll(".dstv_miniTick")]
+			.map((t, i) => (t.tabIndex === 0 ? i : -1))
+			.filter((i) => i >= 0);
+		// Earlier groups leave a station selected; the overview tab stop only exists in the
+		// overview state, so ask for it explicitly rather than depending on leftover state.
+		const root = document.querySelector(".dstv_root");
+		if (root !== null) root.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
+		await tick(300);
+		const overview = tickStops();
+		if (overview.length !== 1 || overview[0] !== 0) fail("the overview minimap should expose exactly tick 0 as its tab stop, got " + JSON.stringify(overview));
+		const cards = [...document.querySelectorAll("[role=option]")];
+		if (cards.length > 4) {
+			cards[3].click();
+			await tick(300);
+			const afterSelect = tickStops();
+			if (afterSelect.length !== 1) fail("the minimap exposes " + afterSelect.length + " tab stops after selecting a station: " + JSON.stringify(afterSelect));
+			if (afterSelect[0] !== 3) fail("the minimap tab stop is on tick " + afterSelect[0] + " but the selection is 3");
+		}
+
+		// (b) one card's own duration is unchanged; only the OTHER station gets slower.
+		const mk = (dur1, dur2) => ({
+			eventNodes: [
+				{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: "a" }] },
+				{ kind: "assistant", seq: 2, time: 2, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "tool-call", callId: "c1", name: "bash", argsRaw: "{}" }] },
+				{ kind: "tool-result", seq: 3, time: 2 + dur1, turn: 1, step: 1, callId: "c1", callTime: 2, name: "bash", content: [{ type: "text", text: "ok" }], isError: false },
+				{ kind: "user", seq: 4, time: 100000, turn: 2, content: [{ type: "text", text: "b" }] },
+				{ kind: "assistant", seq: 5, time: 100001, turn: 2, step: 1, messageId: "m2", blocks: [{ kind: "tool-call", callId: "c2", name: "bash", argsRaw: "{}" }] },
+				{ kind: "tool-result", seq: 6, time: 100001 + dur2, turn: 2, step: 1, callId: "c2", callTime: 100001, name: "bash", content: [{ type: "text", text: "ok" }], isError: false }
+			],
+			requests: [], callSchemas: {}, runningCalls: [], partial: null
+		});
+		const bars = () => [...document.querySelectorAll(".dstv_durBar i")].map((e) => e.style.width);
+		window.__store.set(mk(1000, 100));
+		await tick(400);
+		const before = bars();
+		window.__store.set(mk(1000, 5000));
+		await tick(400);
+		const after = bars();
+		if (before.length < 2 || after.length < 2) fail("the duration bars did not render: " + JSON.stringify(before));
+		else if (before[0] !== "100%" || after[0] === "100%") fail("the first station's bar kept its old proportion (" + JSON.stringify(before) + " -> " + JSON.stringify(after) + ") after the OTHER station became the slowest — the global maximum is not a cache input");
+		info.cacheInputs = { tickStops: overview.length, bars: before[0] + " -> " + after[0] };
+
+		window.__store.set(Object.assign({ partial: null }, healthySnap));
+		await tick(300);
+	}
+
 	return JSON.stringify({ failures, info });
 })()

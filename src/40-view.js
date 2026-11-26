@@ -265,12 +265,14 @@
 			// Per-station rendered elements, so an unchanged card keeps its element identity and
 			// React skips the subtree entirely. Cleared when the session changes (ids are only
 			// unique within a session) — see `stationSig`'s comment.
+
 			const cardElCache = (0, react.useRef)(new Map());
 			const tickElCache = (0, react.useRef)(new Map());
 			// The caches live as long as the view, but their contents are only valid for one
 			// language and one session: station ids are per-session, and a cached element holds
 			// already-translated text. Clearing on change keeps `t` and `sessionKey` out of the
 			// per-element signature (they would invalidate every card anyway).
+			const sigCacheRef = (0, react.useRef)({ arr: null, sigs: [] });
 			const cacheScopeRef = (0, react.useRef)({ t: null, sessionKey: null });
 			// A cached element keeps the closures it was built with. Those closures would go
 			// stale the moment the view re-renders (arrow keys read the current selection, seek
@@ -278,10 +280,13 @@
 			// on every render. Element identity stays cacheable, behaviour stays current.
 			const handlersRef = (0, react.useRef)({ seek: null, keyDown: null });
 
+
 			if (cacheScopeRef.current.t !== t || cacheScopeRef.current.sessionKey !== sessionKey) {
 				cacheScopeRef.current = { t, sessionKey };
 				cardElCache.current.clear();
 				tickElCache.current.clear();
+				sigCacheRef.current.arr = null;
+				sigCacheRef.current.sigs = [];
 			}
 			const searchRef = (0, react.useRef)(null);
 			const initDone = (0, react.useRef)(false);
@@ -1004,6 +1009,17 @@
 					seek(i); ev.preventDefault(); ev.stopPropagation();
 				}
 			};
+			// Refreshed after commit; a cached element reads it at click/key time. A layout
+			// effect rather than a render-time assignment, because a render React throws away
+			// would otherwise leave the abandoned pass's handler behind.
+			//
+			// DECLARED HERE, above `if (N === 0)` and its early return: a hook below that
+			// branch is skipped on the empty/loading render, and React aborts the whole panel
+			// with "Rendered fewer hooks than expected".
+			(0, react.useLayoutEffect)(() => {
+				handlersRef.current.seek = seek;
+				handlersRef.current.keyDown = stationOnKeyDown;
+			});
 			const onKeyDown = (ev) => {
 				const k = ev.key;
 				// Browser and OS shortcuts must win. The panel root is focusable
@@ -1336,16 +1352,13 @@
 			 * `renderStationCard` + the axis zone touch, its position, its neighbour's edge
 			 * (the idle band), and the four per-station booleans the parent computes.
 			 */
-			// Refreshed every render; a cached element reads it at click/key time.
-			handlersRef.current.seek = seek;
-			handlersRef.current.keyDown = stationOnKeyDown;
-
 			// FNV-1a over the fields the card reads, accumulated WITHOUT building a
 			// concatenated string. The first version joined every field into one string —
 			// harmlessly fast on the fixture, but a real 1000-node window carries ~1.1 MB of
 			// tool output, and joining that per station per render made a keystroke cost
 			// 1.17 s again. A rolling hash over each field is linear either way, but it
 			// allocates nothing (§13.73).
+
 			const stationSig = (s) => {
 				if (s == null) return "";
 				let h = 2166136261;
@@ -1366,24 +1379,29 @@
 				mix(s.args); mix(s.payload); mix(s.eventType); mix(s.replace); mix(s.retry);
 				mix(s.isError); mix(s.hasError); mix(s.live); mix(s.synthetic); mix(s.tag);
 				mix(s.time); mix(s.startMs); mix(s.endMs); mix(s.seq); mix(s.toolMs); mix(s.maxToolMs);
+				// The duration bar divides by a GLOBAL denominator (`stats.maxToolMs ||
+				// stats.toolMs`), not by this station's own maximum. Mixing only the station
+				// fields meant every cached bar kept its old width when a DIFFERENT station
+				// became the slowest one — a stale proportion bar, caught by review.
+				mix(stats.maxToolMs); mix(stats.toolMs);
 				mix(s.outcomeText); mix(s.outcomeKind);
 				if (Array.isArray(s.meta)) { mix(s.meta.length); for (const m of s.meta) mix(m); }
 				else mix(s.meta);
-				// Not just the length: the preview shows a tool marker, the error flag and the
-				// running state, so a same-length edit must still invalidate the card.
+				// EVERY cell field the card renders, not just the shape. The first version
+				// hashed only kind/isError/running — so a settled step whose assistant cell text
+				// changed kept the OLD text on the card (verified: ALPHA-ONE stayed on screen
+				// while the detail panel showed ALPHA-TWO). `resultText` is deliberately absent:
+				// the card does not render it and it is by far the largest field (§13.75).
 				if (Array.isArray(s.cells)) {
 					mix(s.cells.length);
-					for (const c of s.cells) { mix(c.kind); mix(c.isError === true); mix(c.running === true); }
+					for (const c of s.cells) {
+						mix(c.kind); mix(c.id);
+						mix(c.text); mix(c.thinking);
+						mix(c.name); mix(c.args); mix(c.errorName);
+						mix(c.durationMs); mix(c.isError === true); mix(c.running === true);
+					}
 				} else mix(-1);
 				return h.toString(36);
-			};
-			// One signature per station per render, computed on first use: each card needs its
-			// own and its neighbour's, and computing them twice doubled the hashing cost.
-			const stationSigs = [];
-			const sigOf = (i) => {
-				if (i < 0) return "";
-				if (stationSigs[i] === void 0) stationSigs[i] = stationSig(stations[i]);
-				return stationSigs[i];
 			};
 			const renderStationCard = (s, cardKey) => {
 				if (s.kind === "user") {
@@ -1567,7 +1585,15 @@
 						// The highlight and the "N / total" part of the aria-label change with the
 						// selection and with the window length. Missing either leaves the old
 						// highlight cached — caught by the minimap assertion, not by reasoning.
-						+ "\u0002" + (revealed !== null && i === R - 1 ? "1" : "0")
+						//
+						// The tab stop is the SAME expression as `tabIndex` below, including its
+						// overview half (`revealed === null && i === 0`). Hashing only the active
+						// half left tick 0 with `tabIndex: 0` after any selection, so the strip had
+						// TWO tab stops (measured: [0, 5] after selecting station 5).
+						+ "\u0002" + ((revealed !== null && i === R - 1) || (revealed === null && i === 0) ? "1" : "0")
+						// `data-k` reads the DERIVED kind, which is "tool" for a step that contains
+						// one — hash the value actually used rather than re-deriving it here.
+						+ "\u0002" + k
 						+ "\u0002" + minimapTickLabel(s) + "\u0002" + fmtClock(s.time)
 						+ "\u0002" + String(stations.length);
 					const tickHit = tickElCache.current.get(i);
@@ -1603,6 +1629,33 @@
 				})
 			}, "rootMini");
 
+			// One signature per station, computed once per TREE rather than once per render.
+			// The per-render version re-hashed every cell body on every keystroke and replay
+			// tick: a real 1.11 MB window cost 105 ms per rebuild instead of 30 ms. `stations`
+			// identity only changes when the fold produces a new tree, so keying on it is
+			// exactly "recompute when the content could have changed".
+			//
+			// A ref rather than useMemo on purpose: this sits BELOW the `if (N === 0)` early
+			// return, and a hook here would be skipped on the empty/loading render (§13.75).
+			const sigPack = sigCacheRef.current;
+			if (sigPack.arr !== stations) {
+				sigPack.arr = stations;
+				sigPack.sigs = stations.map(stationSig);
+				// Drop what the new window no longer contains. A live station is replaced by its
+				// durable twin (new id) on every fold, and paging in older history shifts every
+				// index, so without this the element maps only ever grow — each entry pinning a
+				// whole card subtree and its station closure (§13.75).
+				if (cardElCache.current.size > stations.length || tickElCache.current.size > stations.length) {
+					const live = new Set(stations.map((st) => st.id));
+					for (const key of [...cardElCache.current.keys()]) {
+						if (!live.has(key)) cardElCache.current.delete(key);
+					}
+					for (const key of [...tickElCache.current.keys()]) {
+						if (!(key >= 0 && key < stations.length)) tickElCache.current.delete(key);
+					}
+				}
+			}
+			const sigOf = (i) => (i < 0 || i >= sigPack.sigs.length ? "" : sigPack.sigs[i]);
 			const body = jsxs("div", {
 				children: [
 					jsx("div", {
