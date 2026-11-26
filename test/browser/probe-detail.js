@@ -529,6 +529,18 @@
 			await enterA();
 			if (selected().length !== 0) fail("a malformed anchor moved the view to " + JSON.stringify(selected()));
 			if (anchorNote().indexOf("无法识别") < 0) fail("a malformed anchor produced no explanation (note " + JSON.stringify(anchorNote()) + ")");
+			// …and it must be ANNOUNCED, not just painted. Anchor paging can run for tens of
+			// seconds with no other feedback, so there is a visually-hidden polite live
+			// region for it. A region that exists but never fills is worse than none: it
+			// looks like the affordance is covered (§13.71).
+			{
+				const lr = document.querySelector(".dstv_visuallyHidden[aria-live]");
+				if (lr === null) fail("the panel has no aria-live region for anchor progress");
+				else {
+					if ((lr.getAttribute("aria-live") || "") !== "polite") fail("the anchor live region is not polite: " + JSON.stringify(lr.getAttribute("aria-live")));
+					if ((lr.textContent || "").indexOf("无法识别") < 0) fail("the anchor note was painted but not announced (live region: " + JSON.stringify((lr.textContent || "").slice(0, 40)) + ")");
+				}
+			}
 
 			// (2) Round-trip: take a station's OWN copied anchor, deselect, paste it back.
 			//     Asserting a hardcoded "tvp1:e2 lands on position 2" would encode the
