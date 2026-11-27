@@ -429,7 +429,7 @@
 				setFollow(true);
 				setRevealed(null);      // overview: show the whole new transcript
 				setQueryRaw("");
-				setMatchPtr(0);
+				setMatchId(null);
 				setOlderNote(null);
 				setPanelFull(false);
 				setTab("detail");

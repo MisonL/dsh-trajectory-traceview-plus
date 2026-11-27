@@ -2700,6 +2700,33 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!/tree\.unplacedRequests > 0/.test(srcAll)) throw new Error("UNPLACEDREQ1 the chip is not gated on a non-zero count");
 	}
 
+	// ── Z3: every `setXxx` the component calls must actually be declared ─────
+	// Renaming a state pair (matchPtr -> matchId) left ONE call site on the old name.
+	// Nothing caught it: the effect that contains it only runs when the conversation
+	// changes while the panel is mounted, the probe never does that, and a ReferenceError
+	// inside an effect is swallowed by React's boundary — the reset silently stopped
+	// half-way instead of throwing. This is a static check with no runtime cost.
+	{
+		const srcZ3 = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "lib", "client.js"), "utf8");
+		const atZ3 = srcZ3.indexOf("function TraceMapView(");
+		if (atZ3 < 0) throw new Error("Z3 could not locate the component");
+		const region = srcZ3.slice(atZ3);
+		// `set` + an uppercase letter + a lowercase letter: catches `setMatchId`,
+		// `setRevealed`, and the stale `setMatchPtr`, while ignoring `settings`/`setup`.
+		const used = new Set([...region.matchAll(/(?<![.\w$])(set[A-Z][a-z][A-Za-z0-9]*)\b/g)].map((m) => m[1]));
+		const declared = new Set();
+		for (const m of region.matchAll(/(?:const|let|var)\s+(set[A-Z][A-Za-z0-9]*)\s*=/g)) declared.add(m[1]);
+		for (const m of region.matchAll(/\[[^\]]*?(set[A-Z][A-Za-z0-9]*)[^\]]*\]\s*=\s*\(0, react\.useState\)/g)) declared.add(m[1]);
+		// Globals with the same shape. Deliberately a short, exact list.
+		const GLOBALS = new Set(["setTimeout", "setInterval", "setImmediate"]);
+		const missing = [...used].filter((name) => !declared.has(name) && !GLOBALS.has(name));
+		if (missing.length > 0) {
+			throw new Error("Z3 the component calls undeclared setter(s): " + missing.join(", ")
+				+ " — a renamed state pair left a stale call site behind, and the effect that owns it fails at runtime only");
+		}
+		if (declared.size < 10) throw new Error("Z3 the declaration scan found only " + declared.size + " setters — the pattern has drifted");
+	}
+
 	// ── MATCHSTART1: a fresh query must not claim a match position it doesn't hold ──
 	// `matchPtr` started at 0, so the counter read "1/3" the instant the reader typed —
 	// while the timeline had not moved — and the FIRST "next" then went to match 2.
