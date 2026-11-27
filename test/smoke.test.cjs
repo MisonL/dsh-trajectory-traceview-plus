@@ -3840,28 +3840,58 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		const start = lines.findIndex((l) => /function TraceMapView\(/.test(l));
 		if (start < 0) throw new Error("Z1 could not locate the component");
 		const params = new Set(["t", "useSession", "useTrajectory", "viewRequest", "completeViewRequest", "loadOlder", "initialAnchor"]);
+		// Only a declaration at the COMPONENT's statement level counts. The old pattern
+		// `/^\t\t\t(?:const|let)/` also matched deeper lines (`\s` swallowed the fourth tab),
+		// so a local `const body` inside one nested arrow registered as a component-level
+		// binding and every sibling that used its OWN `body` looked like a TDZ read. That is
+		// why the guard carried a `seek|body` name whitelist — a band-aid which also made
+		// those two names permanently immune to a real TDZ.
 		const declared = {};
 		for (let i = start; i < lines.length; i += 1) {
-			const m = /^\t\t\t(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=/.exec(lines[i]);
+			const m = /^\t{3}(?:const|let) ([A-Za-z_$][\w$]*)\s*=/.exec(lines[i]);
 			if (m !== null && declared[m[1]] === void 0) declared[m[1]] = i;
 		}
+		// A read only counts when it is NOT inside a function body: a closure that merely
+		// mentions a later `const` is fine, because the closure runs after the declaration.
+		// Braces must be counted on CODE, not on prose: a `{` inside a template literal or a
+		// string inflated the depth and every later line looked nested. This is why the first
+		// version of the rewrite silently passed an injected TDZ.
+		const codeLines = lines.map((l) => l
+			.replace(/`[^`]*`/g, "``")
+			.replace(/"(?:[^"\\]|\\.)*"/g, '""')
+			.replace(/'(?:[^'\\]|\\.)*'/g, "''")
+			.replace(/\/\/.*$/, ""));
+		const insideFunction = (upto) => {
+			let depth = 0;
+			const stack = [];
+			for (let j = start; j <= upto; j += 1) {
+				const line = codeLines[j];
+				const isFn = /=>|\bfunction\b/.test(line);
+				const opens = (line.match(/\{/g) || []).length;
+				const closes = (line.match(/\}/g) || []).length;
+				for (let k = 0; k < opens; k += 1) stack.push(isFn);
+				depth += opens - closes;
+				while (stack.length > Math.max(0, depth)) stack.pop();
+			}
+			// The component body is itself a function frame; a read at its top level is
+			// still a statement-level read. Only frames DEEPER than the component count as
+			// "deferred", which is exactly the distinction the original bug needed.
+			return stack.slice(1).some(Boolean);
+		};
 		const offenders = [];
 		for (let i = start; i < lines.length; i += 1) {
 			const line = lines[i];
 			if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
-			// Strip string literals so prose mentioning an identifier is not a "use".
 			const code = line.replace(/"[^"]*"/g, '""').replace(/'[^']*'/g, "''");
 			for (const [name, at] of Object.entries(declared)) {
 				if (at <= i || params.has(name)) continue;
-				const re = new RegExp("(?<![\\w$.'\"])" + name.replace(/\$/g, "\\$") + "(?![\\w$'\"])");
-				if (re.test(code)) offenders.push(`${name} used at line ${i + 1}, declared at ${at + 1}`);
+				const re = new RegExp("(?<![\\w$.'\"])" + name.replace(/\$/g, "\\$") + "(?![\\w$'\":])");
+				if (re.test(code)) offenders.push({ name, i, at });
 			}
 		}
-		// Function bodies may reference a later-declared helper as long as they are not
-		// CALLED before it exists; those are flat function bodies, so allow references
-		// that sit inside an arrow/function declared earlier. We only fail on a direct
-		// statement-level read, which is what the TDZ bug looked like.
-		const real = offenders.filter((o) => !/\bseek used|\bbody used/.test(o));
+		const real = offenders
+			.filter((o) => !insideFunction(o.i))
+			.map((o) => `${o.name} used at line ${o.i + 1}, declared at ${o.at + 1}`);
 		if (real.length > 0) throw new Error("Z1 const read before its declaration (TDZ): " + real.slice(0, 3).join("; "));
 
 		// ---- Z2: no React hook may be declared below an early return ----------

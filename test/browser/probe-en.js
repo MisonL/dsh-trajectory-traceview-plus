@@ -51,7 +51,11 @@
 	// fixture's own Chinese message), not translation. Scanning it reported a leak that was
 	// simply the fixture talking.
 	const rootEl = document.querySelector(".dstv_root");
-	if (rootEl !== null) {
+	// A missing root must FAIL, not skip: `if (rootEl !== null) { ... }` meant a panel that
+	// vanished (or crashed into a boundary card) satisfied every name check by doing
+	// nothing. The only reason this file has no such assert is that it never needed one.
+	if (rootEl === null) fail("the panel root is missing after switching language");
+	else {
 		const rootName = rootEl.getAttribute("aria-label") || "";
 		if (rootName !== "" && cjk.test(rootName)) leaks.push("panel aria: " + rootName.slice(0, 40));
 	}
@@ -88,7 +92,7 @@
 	}
 
 	if (leaks.length > 0) fail("the English UI still shows Chinese in " + leaks.length + " place(s): " + JSON.stringify(leaks.slice(0, 4)));
-	if (rootEl !== null && (rootEl.getAttribute("aria-label") || "").trim() === "") fail("the panel lost its accessible name after switching language");
+	if ((rootEl.getAttribute("aria-label") || "").trim() === "") fail("the panel lost its accessible name after switching language");
 	info.englishLeaks = leaks.length;
 
 	window.__setLocale("zh");

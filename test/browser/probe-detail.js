@@ -185,7 +185,20 @@
 					.find((e) => /子调用|sub-call/i.test(e.textContent || ""));
 				if (summary === undefined) fail("the tool detail shows no sub-call section although the fixture has one");
 				else {
-					if (!/\(1\)|（1）|1/.test(summary.textContent || "")) fail("the sub-call summary does not state how many calls there are: " + JSON.stringify(summary.textContent));
+					// `/(1)/` was written `/\(1\)|（1）|1/` — the trailing bare `1` is satisfied by
+					// "…（1）" AND by any stray digit, so the assertion could never isolate the
+					// count. Require the number to be parenthesised, and to match the number of
+					// child cards the section actually renders.
+					const countText = summary.textContent || "";
+					const stated = /\((\d+)\)|（(\d+)）/.exec(countText);
+					if (stated === null) fail("the sub-call summary does not state how many calls there are: " + JSON.stringify(countText));
+					else {
+						const statedCount = Number(stated[1] ?? stated[2]);
+						const renderedChildren = (summary.parentElement || document).querySelectorAll(".dstv_subCard").length;
+						if (statedCount !== renderedChildren) {
+							fail("the sub-call summary claims " + statedCount + " call(s) but " + renderedChildren + " sub-card(s) rendered: " + JSON.stringify(countText));
+						}
+					}
 					// Expand and verify the child card names the child tool, not the parent.
 					const det = summary.parentElement;
 					if (det !== null) det.open = true;
@@ -362,6 +375,27 @@
 		// across conversations, so two keys is the CORRECT outcome here; asserting "at
 		// most one" was my own misreading of the promise (measured: it went red the moment
 		// a new group touched the panel).
+		// LOWER BOUND: the shape checks below all sit behind `if (keys().length > 0)`, so a
+		// persistence layer that silently stopped writing would pass the entire block and
+		// report info.storage = "none". Drive it explicitly: select a station, require a key
+		// to appear, then clear and require it to be deleted rather than blanked.
+		{
+			const beforeSelect = keys().slice().sort().join("|");
+			const target = [...document.querySelectorAll("[role=option]")][1];
+			if (target === void 0) fail("no station to select for the storage write check");
+			else {
+				target.click();
+				await tick(350);
+				if (keys().length === 0) fail("selecting a station wrote no view-state key at all (persistence is silently dead)");
+				const rootEl = document.querySelector(".dstv_root");
+				if (rootEl !== null) rootEl.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
+				await tick(350);
+				if (keys().slice().sort().join("|") !== beforeSelect && keys().length > 2) {
+					fail("clearing the selection did not delete its key: " + JSON.stringify(keys()));
+				}
+			}
+		}
+
 		const ks = keys();
 		if (ks.length > 2) fail("more than two view-state keys were written for two conversations: " + JSON.stringify(ks));
 		if (new Set(ks).size !== ks.length) fail("duplicate view-state keys: " + JSON.stringify(ks));
@@ -1008,7 +1042,11 @@
 		await tick(300);
 
 		const cards = [...document.querySelectorAll("[role=option]")];
-		if (cards.length > 4) {
+		// `if (cards.length > 4)` turned a shrinking fixture into silence: with four or fewer
+		// stations the selection/highlight check simply did not run, and the group still
+		// reported PASS. Say so instead — the fixture is supposed to have fifteen.
+		if (cards.length < 4) fail("the fixture lost stations for the minimap selection check (need >= 4, got " + cards.length + ")");
+		else {
 			cards[3].click();
 			await tick(300);
 			const afterSelect = tickStops();

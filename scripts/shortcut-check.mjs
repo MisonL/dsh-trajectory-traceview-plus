@@ -44,7 +44,14 @@ const table = tableEnd < 0 ? section : section.slice(0, tableEnd);
 // A row looks like: `| `←` / `→` | 上一个 / 下一个站点 |`
 // Take every backticked key in the FIRST cell. Cells like `` `↑` / `↓`（搜索时） ``
 // contain two keys and a qualifier; both keys must be covered.
-const rows = [...table.matchAll(/^\|\s*(`[^|]+?`)\s*\|/gm)].map((m) => m[1]);
+// Take the whole FIRST CELL and pull the backticked keys out of it. The earlier pattern
+// required the cell to END right after a backtick, so the two rows with a qualifier —
+// "`↑` / `↓`（搜索时）" and "`Enter` / `Shift+Enter`（搜索时）" — were never parsed at all.
+// The gate then reported "8 行 / 11 个键" as if that were the whole table: the two rows a
+// reader most needs (search-time navigation) were promised and unverified.
+const rows = [...table.matchAll(/^\|([^|]*)\|/gm)]
+	.map((m) => m[1])
+	.filter((cell) => cell.indexOf("`") >= 0);
 if (rows.length === 0) {
 	problems.push('README §7 has no shortcut rows; the patterns have drifted from the table');
 }
@@ -56,22 +63,40 @@ const PROBE_NAME = {
 	'→': 'ArrowRight',
 	'↑': 'ArrowUp',
 	'↓': 'ArrowDown',
-	'空格': '" "',
+	'空格': ' ',
 	Esc: 'Escape',
 	'`Esc`': 'Escape',
-	'`空格`': '" "',
+	'`空格`': ' ',
+	Enter: 'Enter',
 };
 
-const probe = read('test/browser/probe.js');
+const PROBE_FILES = ['test/browser/probe.js', 'test/browser/probe-detail.js', 'test/browser/probe-en.js'];
+// Comments are dropped first: `// await press("f")` is a note, not a test, but matching the
+// raw text counted it as coverage. Verified by commenting the call out — the gate stayed
+// green until the comment lines were excluded.
+const codeOf = (f) => read(f).split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+const probe = PROBE_FILES.map(codeOf).join('\n');
 const covered = [];
 for (const row of rows) {
 	const keys = [...row.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 	for (const key of keys) {
+		// `Shift+Enter` is not a string literal in the probe: it is a key plus a modifier.
+		// Requiring both halves is what makes the row mean something.
+		if (key === "Shift+Enter") {
+			const shifted = /shiftPress\("Enter",\s*true\)/.test(probe);
+			if (!shifted) problems.push('README §7 documents `Shift+Enter` but no probe calls shiftPress("Enter", true)');
+			else covered.push(key);
+			continue;
+		}
 		const needle = PROBE_NAME[key] ?? key;
-		// `Enter` shows up as shiftPress("Enter", …) and press("Enter"); a bare
-		// substring test is right here because the probe names keys as string literals.
-		if (!probe.includes(needle)) {
-			problems.push('README §7 documents `' + key + '` but test/browser/probe.js never mentions '
+		// A plain `includes` was worthless for one-character keys: `f` occurs 199 times in
+		// the probe as an ordinary letter, so the row could never fail. Require an actual
+		// key event — `press("<key>")` or `shiftPress("<key>"` — in any of the probe files.
+		const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const call = new RegExp('(?:press|shiftPress)\\("' + escaped + '"');
+		const usedIn = PROBE_FILES.find((f) => call.test(codeOf(f)));
+		if (usedIn === void 0) {
+			problems.push('README §7 documents `' + key + '` but no probe ever presses '
 				+ JSON.stringify(needle) + ' — the key is promised and never exercised');
 		} else {
 			covered.push(key);

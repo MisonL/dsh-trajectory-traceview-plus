@@ -35,11 +35,27 @@
 	if (info.runtimeErrors.length > 0) fail("runtime errors: " + info.runtimeErrors.join(" | "));
 
 	// 1) every interactive element must expose an accessible name
-	const nameless = [...document.querySelectorAll("button,a,input")].filter((el) => {
-		if (el.getAttribute("aria-label") !== null && el.getAttribute("aria-label") !== "") return false;
-		return (el.textContent || "").trim() === "" && el.tagName !== "INPUT";
-	});
-	if (nameless.length > 0) fail(nameless.length + " interactive element(s) with no accessible name");
+	//
+	// This check used to end with `&& el.tagName !== "INPUT"`, which excused EVERY input:
+	// an `<input>` with no aria-label, no title and no label always passed, so the one
+	// control type a screen reader announces as "edit text, blank" was the only one that
+	// could never fail. Inputs are the reason this assertion exists.
+	//
+	// Scoped to the panel: the harness host renders its own chrome, and failing on a
+	// control this plugin did not create would be a false alarm.
+	const accessibleName = (el) => {
+		if ((el.getAttribute("aria-label") || "").trim() !== "") return true;
+		if ((el.getAttribute("title") || "").trim() !== "") return true;
+		const labelled = el.id !== "" && document.querySelector(`label[for="${el.id}"]`) !== null;
+		if (labelled) return true;
+		return (el.textContent || "").trim() !== "";
+	};
+	const nameless = [...document.querySelectorAll(".dstv_root button, .dstv_root a, .dstv_root input, .dstv_root select, .dstv_root textarea")]
+		.filter((el) => !accessibleName(el));
+	if (nameless.length > 0) {
+		fail(nameless.length + " interactive element(s) with no accessible name: "
+			+ nameless.map((el) => el.tagName + "." + String(el.className || "")).slice(0, 3).join(", "));
+	}
 
 	// 2) click a step station: selection follows, the card scrolls into view, keyboard roving moves
 	const stepIdx = opts().findIndex((o) => (o.getAttribute("aria-label") || "").indexOf("步骤") >= 0);
@@ -112,6 +128,30 @@
 		if (!(typeof pd2 === "number" && pd2 > pd)) fail("a second PageDown did not advance past " + pd + " (got " + JSON.stringify(pd2) + ")");
 		await press("PageUp");
 		if (selected()[0] !== pd) fail("PageUp did not return to " + pd + " (got " + JSON.stringify(selected()[0]) + ")");
+
+		// `/` and `f` both focus the search box (README §7). Neither was ever pressed by
+		// any probe: the shortcut gate accepted "the file mentions `f` somewhere", and `f`
+		// appears 199 times as an ordinary letter. Assert the FOCUS moves, which is the
+		// whole promise — and that it lands on the search input, not just anywhere.
+		{
+			// Written out one key at a time on purpose: the shortcut gate looks for a
+			// literal `press("<key>")`, so a loop over ["/", "f"] would satisfy the prose
+			// and not the check.
+			root.focus();
+			await press("/");
+			const afterSlash = document.activeElement;
+			if (!(afterSlash !== null && afterSlash.tagName === "INPUT" && String(afterSlash.className || "").indexOf("dstv_searchInput") >= 0)) {
+				fail("`/` did not focus the search box (active: " + (afterSlash === null ? "null" : afterSlash.tagName + "." + String(afterSlash.className || "")) + ")");
+			}
+			if (typeof afterSlash.blur === "function") afterSlash.blur();
+			root.focus();
+			await press("f");
+			const afterF = document.activeElement;
+			if (!(afterF !== null && afterF.tagName === "INPUT" && String(afterF.className || "").indexOf("dstv_searchInput") >= 0)) {
+				fail("`f` did not focus the search box (active: " + (afterF === null ? "null" : afterF.tagName + "." + String(afterF.className || "")) + ")");
+			}
+			if (typeof afterF.blur === "function") afterF.blur();
+		}
 
 		// `r` toggles the request tab, but ONLY where a request exists. Pick a step
 		// station (they carry `request`) and check both directions plus the guard.
