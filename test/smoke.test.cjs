@@ -1662,6 +1662,31 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── PAIR1: an id-less result must not jump turns ─────────────────────────
+	// With `callId` omitted, EVERY id-less result lands in one bucket. "First unconsumed"
+	// then handed turn 2's output to turn 1's call, silently: the panel showed CALL_A with
+	// ONLY-RESULT-B and CALL_B with nothing, and no diagnostic anywhere. Pairing now prefers
+	// a result from the same turn after the call, and an id-less call refuses other turns.
+	{
+		const mk = (withIds) => ({ eventNodes: [
+			{ kind: "user", seq: 1, time: 1000, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "assistant", seq: 2, time: 2000, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "tool-call", name: "CALL_A", argsRaw: "{}", callId: withIds ? "a" : void 0 }] },
+			{ kind: "user", seq: 3, time: 3000, turn: 2, content: [{ type: "text", text: "q2" }] },
+			{ kind: "assistant", seq: 4, time: 4000, turn: 2, step: 1, messageId: "m2", blocks: [{ kind: "tool-call", name: "CALL_B", argsRaw: "{}", callId: withIds ? "b" : void 0 }] },
+			{ kind: "tool-result", seq: 5, time: 5000, turn: 2, step: 1, name: "CALL_B", callId: withIds ? "b" : void 0, content: [{ type: "text", text: "ONLY-RESULT-B" }] }
+		], requests: [], callSchemas: {}, runningCalls: {}, partial: null });
+		const toolText = (tree) => {
+			const out = {};
+			for (const st of tree.stations) for (const c of (st.cells || [])) if (c.kind === "tool") out[String(c.name)] = String(c.resultText || "");
+			return out;
+		};
+		const withoutIds = toolText(deriveTraceTree(mk(false), t));
+		const withIds = toolText(deriveTraceTree(mk(true), t));
+		if (withoutIds.CALL_A !== "") throw new Error("PAIR1 an id-less call took another turn's result: CALL_A = " + JSON.stringify(withoutIds.CALL_A));
+		if (withoutIds.CALL_B !== "ONLY-RESULT-B") throw new Error("PAIR1 the real caller lost its result: CALL_B = " + JSON.stringify(withoutIds.CALL_B));
+		if (withoutIds.CALL_B !== withIds.CALL_B) throw new Error("PAIR1 id-less pairing disagrees with id-based pairing");
+	}
+
 	// ── LINEAR1: a long non-conforming table separator must not stall ────────
 	// The separator test was `/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/`. Its two classes overlap on
 	// `-`, so a long dash run that FAILS re-splits for every position: 2,000 hyphens 96 ms,

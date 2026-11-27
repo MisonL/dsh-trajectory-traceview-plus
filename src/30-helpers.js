@@ -1080,16 +1080,41 @@
 			// React warned about duplicate keys (measured: `["tdup","tdup"]`). Suffix the
 			// ordinal unconditionally; it is what keeps same-id siblings apart.
 			const cellId = (prefix, callId, ordinal) => `${prefix}${typeof callId === "string" ? callId : `?${String(ordinal)}`}#${String(ordinal)}`;
-			/** Next unclaimed result for this call id, or undefined when none is left. */
-			const takeResult = (callId) => {
+			/**
+			 * Next unclaimed result for this call, or undefined when none is left.
+			 *
+			 * `turn`/`afterSeq` are not decoration: when the log omits `callId`, EVERY id-less
+			 * result lands in the same `resultsById` bucket under `undefined`, and "first
+			 * unconsumed" handed turn 2's output to turn 1's call — silently, with no
+			 * diagnostic (measured: CALL_A displayed ONLY-RESULT-B while CALL_B, the real
+			 * caller, showed nothing). Prefer a result from the SAME turn that comes AFTER
+			 * the call; fall back to the same turn, then to the legacy first-unconsumed so a
+			 * normal log behaves exactly as before.
+			 */
+			const takeResult = (callId, turn, afterSeq) => {
 				const list = resultsById.get(callId);
 				if (list === void 0) return void 0;
+				// Without an id, the bucket holds every id-less result in the window. A result
+				// from ANOTHER turn is not this call's output — taking it is the silent
+				// misattribution this rewrite exists to stop, so an id-less call refuses it
+				// and shows "no result" instead of someone else's text.
+				const idless = callId === void 0 || callId === null;
+				let sameTurn = null;
+				let legacy = null;
 				for (const r of list) {
 					if (consumedResults.has(r)) continue;
-					consumedResults.add(r);
-					return r;
+					const sameTurnMatch = r.turn === turn && turn !== void 0;
+					if (idless && !sameTurnMatch) continue;
+					if (sameTurnMatch && Number.isFinite(afterSeq) && Number.isFinite(r.seq) && r.seq > afterSeq) {
+						consumedResults.add(r);
+						return r;
+					}
+					if (sameTurnMatch && sameTurn === null) sameTurn = r;
+					if (legacy === null) legacy = r;
 				}
-				return void 0;
+				const pick = sameTurn ?? legacy;
+				if (pick !== null) consumedResults.add(pick);
+				return pick ?? void 0;
 			};
 
 			// Requests keyed by `${turn}:${step}`, with prompt inheritance across
@@ -1286,7 +1311,7 @@
 						} else if (b.kind === "tool-call") {
 							// every durable block is a real call, even with a repeated id
 							claimCall(turn, b.callId);
-							const res = takeResult(b.callId);
+							const res = takeResult(b.callId, turn, n.seq);
 							const isRunning = res === undefined && runningById.has(b.callId);
 							if (isRunning) st.live = true;
 							const schema = schemasById.get(b.callId);
@@ -1474,7 +1499,7 @@
 					} else if (b.kind === "tool-call") {
 						if (claimedCall(turn, b.callId)) continue;
 						claimCall(turn, b.callId);
-						const res = takeResult(b.callId);
+						const res = takeResult(b.callId, turn, seq);
 						st.toolCount += 1;
 						if (res?.isError === true) st.hasError = true;
 						const schema = schemasById.get(b.callId);

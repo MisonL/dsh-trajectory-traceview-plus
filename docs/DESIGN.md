@@ -10705,6 +10705,7 @@ boundary: false     ← 没有渲染失败卡
 | 11 | 一个 `{toString:null}` 字段让整个面板变错误卡 | 站点 0、`Cannot convert object to primitive value` | `HOSTILE1`（变异 → 红） |
 | 12 | 导出只转义 ``` 围栏，`~~~` 会吞掉后面所有站点 | Pandoc 把下个站点吞进代码块 | `HOSTILE2`（变异 → 红） |
 | 13 | 表分隔符正则二次行为：20,000 横杠 32.8 s | 2K 96ms → 8K 2.1s → 20K 32.8s | `LINEAR1`（变异 → 红） |
+| 14 | 缺 `callId` 的结果被另一轮调用领走 | CALL_A 显示 ONLY-RESULT-B，CALL_B 空 | `PAIR1`（变异 → 红） |
 
 #### 性能那条的完整对照
 
