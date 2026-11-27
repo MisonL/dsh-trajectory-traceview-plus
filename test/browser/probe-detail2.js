@@ -436,6 +436,61 @@
 		}
 	}
 
+	// 23g) a remount whose FIRST FRAME has no stations must still pin the selection.
+	// The host restores `revealed` and only then hands over the station list. Recording the
+	// pin against an empty list wrote "nothing is selected", and the next page load kept the
+	// index: measured T6 → T3. `selectedIdRef` therefore has to distinguish "not recorded
+	// yet" from "recorded, overview".
+	{
+		const mkT = (from, to) => {
+			const out = [];
+			for (let i = from; i <= to; i += 1) out.push({ kind: "user", seq: i * 10, time: 1000 + i * 1000, turn: i, content: [{ type: "text", text: "T" + i }] });
+			return out;
+		};
+		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		const viewKeys = () => Object.keys(window.sessionStorage).filter((k) => k.indexOf("dstv:view:") === 0);
+		for (const k of viewKeys()) window.sessionStorage.removeItem(k);
+		window.__store.set(Object.assign({ eventNodes: mkT(1, 10) }, base));
+		await tick(450);
+		const opts = () => [...document.querySelectorAll("[role=option]")];
+		const textOf = () => {
+			const cur = opts().find((o) => o.getAttribute("aria-selected") === "true");
+			return cur === undefined ? "" : ((cur.getAttribute("aria-label") || "").split("，").pop() || "");
+		};
+		if (opts().length < 6) fail("not enough stations for the empty-first-frame check (" + opts().length + ")");
+		else {
+			opts()[5].click();
+			await tick(600);
+			const keys = viewKeys();
+			if (keys.length !== 1) fail("expected one view-state key before the empty-frame remount, got " + JSON.stringify(keys));
+			else {
+				const sessionKey = keys[0].slice("dstv:view:1:".length);
+				const before = textOf();
+				// The host mounts with the restored position and NO stations yet.
+				window.__store.set(Object.assign({ eventNodes: [] }, base));
+				window.__remount({ sessionKey });
+				await tick(150);
+				if (opts().length !== 0) fail("the empty first frame did not actually render empty (" + opts().length + " stations)");
+				// …then the list arrives.
+				window.__store.set(Object.assign({ eventNodes: mkT(1, 10) }, base));
+				await tick(500);
+				if (textOf() !== before) fail("the list arriving did not restore " + JSON.stringify(before) + ", got " + JSON.stringify(textOf()));
+				// …and the first page load must keep that station, not its index.
+				window.__store.set(Object.assign({ eventNodes: [
+					{ kind: "user", seq: 3, time: 100, turn: 0, content: [{ type: "text", text: "OLD0" }] },
+					{ kind: "user", seq: 6, time: 200, turn: 0, content: [{ type: "text", text: "OLD1" }] },
+					{ kind: "user", seq: 9, time: 300, turn: 0, content: [{ type: "text", text: "OLD2" }] }
+				].concat(mkT(1, 10)) }, base));
+				await tick(600);
+				const after = textOf();
+				if (after !== before) fail("after an empty first frame the first page load moved the selection from " + JSON.stringify(before) + " to " + JSON.stringify(after));
+				info.emptyFrame = { before, after };
+				window.__store.set(Object.assign({ partial: null }, healthySnap));
+				await tick(250);
+			}
+		}
+	}
+
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
 	// invisible while the single-step copy AND the whole-trace export printed the whole

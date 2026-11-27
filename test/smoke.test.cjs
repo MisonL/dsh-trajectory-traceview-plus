@@ -4122,7 +4122,15 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 			const srcO = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "lib", "client.js"), "utf8");
 			if (!/const selectionChanged = prevRevealedRef\.current !== revealed;/.test(srcO)) throw new Error("X1-o the pin must record only on a selection change");
 			if (/\}, \[selectedStationId\]\);/.test(srcO)) throw new Error("X1-o recording must not depend on the derived id");
-			if (!/\}, \[revealed\]\);/.test(srcO)) throw new Error("X1-o recording must depend on revealed alone");
+			// The recording effect now also watches the station COUNT: a remount restores
+			// `revealed` before the list arrives, and without a re-run the pin stayed unrecorded
+			// and the next page load kept the index. What must NOT happen is a paging re-run
+			// overwriting an id that is already recorded — that is the real invariant, and it is
+			// enforced by the early return rather than by the dependency array.
+			if (!/\}, \[revealed, N\]\);/.test(srcO)) throw new Error("X1-o recording must re-run when the station count arrives");
+			if (!/if \(!selectionChanged && selectedIdRef\.current !== void 0\) return;/.test(srcO)) {
+				throw new Error("X1-o paging must not overwrite a pin that is already recorded");
+			}
 			// The id is read through the ref so paging cannot re-trigger the effect.
 			if (!/selectedIdRef\.current = revealed === null \? null/.test(srcO)) throw new Error("X1-o the pin must be recorded from the live list");
 		}
