@@ -491,6 +491,43 @@
 		}
 	}
 
+	// 23h) follow mode must NOT drag the view when the reader is on an older station.
+	// 23c pins the "at the tip" half; this is the other half. A `followTipRef` that stayed
+	// true would still pass 23c while yanking the viewport away from whatever the reader
+	// deliberately opened.
+	{
+		const mkF = (n) => {
+			const out = [];
+			for (let i = 1; i <= n; i += 1) out.push({ kind: "user", seq: i * 10, time: 1000 + i * 1000, turn: i, content: [{ type: "text", text: "F" + i }] });
+			return out;
+		};
+		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		const sc = document.querySelector(".dstv_scroller");
+		const followBtn = () => [...document.querySelectorAll("button")].find((b) => /跟随/.test(((b.title || "") + (b.getAttribute("aria-label") || ""))));
+		const atEnd = () => Math.abs(sc.scrollLeft + sc.clientWidth - sc.scrollWidth) < 8;
+		const optsF = () => [...document.querySelectorAll("[role=option]")];
+		if (sc === null) fail("no scroller for the follow-negative check");
+		else if (followBtn() === void 0) fail("the follow toggle is missing (negative check)");
+		else {
+			window.__store.set(Object.assign({ eventNodes: mkF(12) }, base));
+			await tick(450);
+			if (followBtn().getAttribute("aria-pressed") !== "true") { followBtn().click(); await tick(250); }
+			optsF()[3].click();
+			await tick(300);
+			// Selecting a station turns follow OFF by design; turn it back on to test the pin.
+			if (followBtn().getAttribute("aria-pressed") !== "true") { followBtn().click(); await tick(250); }
+			const beforeLeft = Math.round(sc.scrollLeft);
+			window.__store.set(Object.assign({ eventNodes: mkF(13) }, base));
+			await tick(500);
+			const afterLeft = Math.round(sc.scrollLeft);
+			if (atEnd()) fail("follow dragged the view to the newest station while the reader was on station 4 (scrollLeft " + beforeLeft + " -> " + afterLeft + ")");
+			if (afterLeft !== beforeLeft) fail("follow scrolled " + beforeLeft + " -> " + afterLeft + " although the reader was on an older station");
+			info.followNegative = { beforeLeft, afterLeft };
+			window.__store.set(Object.assign({ partial: null }, healthySnap));
+			await tick(250);
+		}
+	}
+
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
 	// invisible while the single-step copy AND the whole-trace export printed the whole
