@@ -375,13 +375,66 @@
 		await tick(300);
 	}
 
-	// 23e) is deliberately ABSENT. The reported "remount → first page load keeps the index,
-	// not the station" could NOT be exercised here: `window.__remount()` in the fixture does
-	// not restore `revealed` from sessionStorage (measured: a selection at "6 / 10 用户 T6"
-	// comes back as "nothing selected" with the stored key `{"revealed":6}` present and
-	// verified before the remount). Without a restored selection there is no pin to test, so
-	// an assertion here would be either vacuous or flaky. Recorded in DESIGN §13.83 instead
-	// of pretending to cover it.
+	// 23e) remount → FIRST page load must keep the STATION, not the index.
+	// The pin-by-id effect skipped its first run after a remount (`prevRevealedRef` was
+	// seeded with the restored value, so it looked like "nothing changed") and
+	// `selectedIdRef` stayed empty; the first prepend then kept the INDEX: measured
+	// "6 / 10 用户 T6" became "6 / 13 用户 T3".
+	//
+	// The remount must pass the SAME sessionKey. Without it the fixture falls back to its
+	// default session and the panel reads a different storage key, so nothing is restored
+	// and the sequence being tested never happens (that is why this group was absent).
+	{
+		const mkT = (from, to) => {
+			const out = [];
+			for (let i = from; i <= to; i += 1) out.push({ kind: "user", seq: i * 10, time: 1000 + i * 1000, turn: i, content: [{ type: "text", text: "T" + i }] });
+			return out;
+		};
+		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		const viewKeys = () => Object.keys(window.sessionStorage).filter((k) => k.indexOf("dstv:view:") === 0);
+		for (const k of viewKeys()) window.sessionStorage.removeItem(k);
+		window.__store.set(Object.assign({ eventNodes: mkT(1, 10) }, base));
+		await tick(500);
+		const opts = () => [...document.querySelectorAll("[role=option]")];
+		const textOf = () => {
+			const cur = opts().find((o) => o.getAttribute("aria-selected") === "true");
+			return cur === undefined ? "" : ((cur.getAttribute("aria-label") || "").split("，").pop() || "");
+		};
+		if (opts().length < 6) fail("not enough stations for the remount-prepend check (" + opts().length + ")");
+		else {
+			opts()[5].click();
+			await tick(800);
+			const keys = viewKeys();
+			if (keys.length !== 1) fail("expected exactly one view-state key before the remount, got " + JSON.stringify(keys));
+			else {
+				const sessionKey = keys[0].slice("dstv:view:1:".length);
+				const before = textOf();
+				window.__remount({ sessionKey });
+				await tick(700);
+				const restored = textOf();
+				if (restored === "") fail("the remount did not restore the selection, so the pin cannot be exercised");
+				else if (restored !== before) fail("the remount restored " + JSON.stringify(restored) + " instead of " + JSON.stringify(before));
+				else {
+					// A REAL page load: older stations are prepended, the existing ones keep their ids.
+					window.__store.set(Object.assign({
+						eventNodes: [
+							{ kind: "user", seq: 3, time: 100, turn: 0, content: [{ type: "text", text: "OLD0" }] },
+							{ kind: "user", seq: 6, time: 200, turn: 0, content: [{ type: "text", text: "OLD1" }] },
+							{ kind: "user", seq: 9, time: 300, turn: 0, content: [{ type: "text", text: "OLD2" }] }
+						].concat(mkT(1, 10))
+					}, base));
+					await tick(700);
+					const after = textOf();
+					if (after !== restored) {
+						fail("after a remount the first page load moved the selection from " + JSON.stringify(restored) + " to " + JSON.stringify(after) + " (index kept, station lost)");
+					}
+					info.remountPrepend = { restored, after };
+					window.__store.set(Object.assign({ partial: null }, healthySnap));
+					await tick(250);
+				}
+			}
+		}
+	}
 
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
