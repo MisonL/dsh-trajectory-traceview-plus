@@ -1662,6 +1662,23 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── LINEAR1: a long non-conforming table separator must not stall ────────
+	// The separator test was `/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/`. Its two classes overlap on
+	// `-`, so a long dash run that FAILS re-splits for every position: 2,000 hyphens 96 ms,
+	// 4,000 575 ms, 8,000 2.1 s, 16,000 7.4 s — a synchronous freeze in the detail panel on
+	// text a model can emit. Now one linear pass. The 1 s ceiling is 10x the fixed cost and
+	// well under the 11 s the old regex needed at 20,000 hyphens.
+	{
+		const pathological = "| a | b |\n|" + "-".repeat(20000) + "x\nbody";
+		const started = Date.now();
+		mdBlocks(pathological);
+		const elapsed = Date.now() - started;
+		if (elapsed > 1000) throw new Error("LINEAR1 a 20,000-hyphen separator line took " + elapsed + " ms (expected well under 1000)");
+		// A CONFORMING separator must still produce a table, including CRLF input.
+		const table = mdBlocks("| a | b |\r\n|---|---|\r\n| 1 | 2 |");
+		if (!table.some((b) => b.type === "table")) throw new Error("LINEAR1 a normal CRLF table stopped parsing");
+	}
+
 	// ── HOSTILE1: one unprintable field must not take the whole view down ────
 	// `stepOf` called `Number(v)` on whatever the node carried. `{toString: null}` has no
 	// primitive conversion, so `Number` THREW while seating the assistant node and the

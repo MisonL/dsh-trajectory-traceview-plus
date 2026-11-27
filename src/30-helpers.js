@@ -2447,6 +2447,27 @@
 			return out;
 		}
 		/** Block-level split. Returns descriptors; see mdInline for the inline level. */
+		/**
+		 * Is this line a Markdown table separator (`|---|:--:|`)?
+		 *
+		 * Equivalent to `/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/`, but linear. The regex was
+		 * quadratic on failure: two overlapping classes around the mandatory `-` let it
+		 * re-split a long dash run for every possible position.
+		 */
+		const WHITESPACE_CHAR = /\s/;
+		function isTableSeparator(line) {
+			if (typeof line !== "string") return false;
+			let dashes = 0;
+			for (let i = 0; i < line.length; i += 1) {
+				const ch = line[i];
+				if (ch === "-") { dashes += 1; continue; }
+				// `\s` in the original class, plus the pipe. Testing one character at a time
+				// keeps the whole thing linear and preserves CRLF and Unicode-space behaviour.
+				if (ch === "|" || ch === ":" || WHITESPACE_CHAR.test(ch)) continue;
+				return false;
+			}
+			return dashes > 0;
+		}
 		function mdBlocks(src) {
 			const lines = String(src ?? "").replace(/\r\n?/g, "\n").split("\n");
 			const blocks = [];
@@ -2480,7 +2501,12 @@
 					continue;
 				}
 				// Table: a header row followed by a |---|---| separator.
-				if (line.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i + 1])) {
+				// The separator test used to be `/^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/`. Its two
+				// character classes overlap on `-`, so a long dash run that FAILS backtracks over
+				// every split: measured 2,000 hyphens 96 ms, 4,000 575 ms, 8,000 2.1 s,
+				// 16,000 7.4 s — a synchronous stall inside the detail panel, on content a model
+				// can emit. Same predicate, one linear pass (§13.84).
+				if (line.includes("|") && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
 					// `\|` is the escape for a literal pipe inside a cell — the only way to
 					// put one in a table at all. Splitting on every `|` cut such a cell in
 					// two, so `| a \| b | c |` became THREE columns ("a \", "b", "c") and
