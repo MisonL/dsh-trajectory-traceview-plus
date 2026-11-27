@@ -1083,5 +1083,33 @@
 		await tick(300);
 	}
 
+	// 25) the content signature must not collide on REAL inputs.
+	// FNV-1a is 32-bit; `mix` folds a number into 64 bits of state, and two ordinary
+	// timestamps 24h apart landed on the same signature (1700000000000 vs 1704294967296).
+	// The cached card kept 06:13:20 while the minimap tick — whose signature carries the
+	// rendered clock — had already moved. Same class as the timezone change: the card shows
+	// a FORMATTED clock, so the signature has to include the formatted text.
+	{
+		const mkClock = (time) => ({
+			eventNodes: [
+				{ kind: "user", seq: 7, time: time, turn: 1, content: [{ type: "text", text: "same" }] },
+				{ kind: "assistant", seq: 8, time: time + 1000, turn: 1, step: 1, messageId: "cm", blocks: [{ kind: "text", text: "ok" }] }
+			],
+			requests: [], callSchemas: {}, runningCalls: {}, partial: null
+		});
+		window.__store.set(mkClock(1700000000000));
+		await tick(450);
+		const firstText = (document.querySelector(".dstv_station") || {}).innerText || "";
+		window.__store.set(mkClock(1704294967296));
+		await tick(450);
+		const secondText = (document.querySelector(".dstv_station") || {}).innerText || "";
+		if (firstText === secondText) {
+			fail("a timestamp 24h later produced the SAME card text (signature collision): " + JSON.stringify(firstText.replace(/\n/g, "|")));
+		}
+		info.collision = { before: firstText.replace(/\n/g, "|"), after: secondText.replace(/\n/g, "|") };
+		window.__store.set(Object.assign({ partial: null }, healthySnap));
+		await tick(300);
+	}
+
 	return JSON.stringify({ failures, info });
 })()

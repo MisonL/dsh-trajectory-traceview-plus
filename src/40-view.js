@@ -1437,7 +1437,19 @@
 						mix(c.durationMs); mix(c.isError === true); mix(c.running === true);
 					}
 				} else mix(-1);
-				return h.toString(36);
+				// The hash alone is not enough: FNV-1a is 32-bit and `mix` folds a number into
+				// 64 bits of state, so two REAL inputs can land on the same value. Measured by
+				// review: seq-identical user stations at time 1700000000000 and 1704294967296
+				// produced the same signature, and the cached card kept 06:13:20 while the
+				// minimap tick (whose signature carries `fmtClock`) had already moved to 23:16:07.
+				// Appending the RENDERED text of the two derived values the card shows gives a
+				// second, non-hash channel — a collision now has to happen in both.
+				//
+				// `s.turn` was missing entirely: a station re-projected from turn 1 to turn 2
+				// kept an aria-label reading "轮次 1" while the projection said 2.
+				return h.toString(36)
+					+ "\u0002" + fmtClock(s.time)
+					+ "\u0002" + (s.turn === null || s.turn === void 0 ? "" : String(s.turn));
 			};
 			/**
 			 * Sub-calls can nest (a tool that itself calls tools). The detail panel rendered
