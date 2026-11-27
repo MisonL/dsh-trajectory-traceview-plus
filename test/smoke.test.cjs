@@ -1662,6 +1662,86 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── ANCHOR1: an anchor copied from a tool result survives the header backfill ──
+	// Copy `tvp1:e19` from an orphan result, load one more page: seq 19 stops being its own
+	// station and becomes a cell of the step at 15. The anchor then said "not loaded" for an
+	// output that was plainly on screen.
+	{
+		const base = [
+			{ kind: "user", seq: 5, time: 1000, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "tool-result", seq: 19, time: 2000, turn: 1, step: 1, callId: "observed-call", name: "bash", callTime: null, content: [{ type: "text", text: "OUTPUT19" }] },
+			{ kind: "user", seq: 20, time: 3000, turn: 2, content: [{ type: "text", text: "q2" }] }
+		];
+		const withHeader = [
+			{ kind: "user", seq: 13, time: 500, turn: 0, content: [{ type: "text", text: "earlier" }] },
+			{ kind: "assistant", seq: 15, time: 800, turn: 1, step: 1, messageId: "m15", blocks: [{ kind: "tool-call", callId: "observed-call", name: "bash", argsRaw: "{}" }] },
+			...base
+		];
+		const treeOf = (nodes) => deriveTraceTree({ eventNodes: nodes, requests: [], callSchemas: {}, runningCalls: {}, partial: null }, t);
+		const resolveIn = (tree) => resolveAnchorInStations(parseAnchor("tvp1:e19", tree.stations), tree.stations);
+		const before = resolveIn(treeOf(base));
+		if (before.ok !== true || before.station.kind !== "orphan-tool") {
+			throw new Error("ANCHOR1 the anchor broke on the plain shape: " + JSON.stringify(before.reason ?? before.station?.kind));
+		}
+		const after = resolveIn(treeOf(withHeader));
+		if (after.ok !== true) {
+			throw new Error("ANCHOR1 after the header backfill the anchor reported " + JSON.stringify(after.reason) + " although the output is on screen");
+		}
+		if (after.station.kind !== "step" || after.absorbedFrom !== 19) {
+			throw new Error("ANCHOR1 the anchor landed on the wrong station: " + JSON.stringify({ kind: after.station.kind, from: after.absorbedFrom }));
+		}
+		if (!(after.station.cells ?? []).some((c) => c.kind === "tool" && c.resultSeq === 19)) {
+			throw new Error("ANCHOR1 the resolved step does not actually contain the result");
+		}
+	}
+
+	// ── COMPACT1: a compaction request must not be borrowed by another marker ──
+	// The time-proximity fallback overrode the request's own `replacementSeq` declaration,
+	// so a marker at seq 20 showed the output of the request for seq 10 — and
+	// `unplacedRequests` stayed 0, so nothing said the text belonged elsewhere.
+	{
+		const T = 1700000000000;
+		const build = (markerSeq) => ({ eventNodes: [
+			{ kind: "user", seq: 1, time: T, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "compaction", seq: markerSeq, time: T + 2000, turn: 2, summary: "MARKER" }
+		], requests: [{ purpose: "compaction", startSeq: 9, replacementSeq: 10, startedAt: T + 800, completedAt: T + 900, status: "complete", rawOutput: [{ type: "text", text: "REQUEST_OLDER_OUTSIDE" }] }], callSchemas: {}, runningCalls: {}, partial: null });
+		const wrong = deriveTraceTree(build(20), t);
+		const wrongMarker = wrong.stations.find((st) => st.kind === "compaction");
+		const wrongText = (wrongMarker.crequest || {}).outputText || "";
+		if (wrongText !== "") throw new Error("COMPACT1 marker 20 displayed the request of marker 10: " + JSON.stringify(wrongText.slice(0, 30)));
+		if (wrong.unplacedRequests !== 1) throw new Error("COMPACT1 a request bound to another marker was not reported: unplacedRequests=" + String(wrong.unplacedRequests));
+		const right = deriveTraceTree(build(10), t);
+		const rightMarker = right.stations.find((st) => st.kind === "compaction");
+		if (((rightMarker.crequest || {}).outputText || "") !== "REQUEST_OLDER_OUTSIDE") {
+			throw new Error("COMPACT1 the real owner lost its request output");
+		}
+		if (right.unplacedRequests !== 0) throw new Error("COMPACT1 the correctly matched request was also reported as unplaced");
+	}
+
+	// ── SEQ1: a legal fractional seq must keep its place ─────────────────────
+	// The host marks an interrupted reply with `22 - 0.9` so it sorts just before the turn
+	// error at 22. `seqOf` used to turn that into null for the WHOLE node list (one bad
+	// seq re-mapped every node), and `null < 20` is true, so the turn jumped to the front:
+	// measured prefix(t2), user20, error22, user10, step(t1). The seq must survive for
+	// ordering while still producing NO anchor.
+	{
+		const snap = { eventNodes: [
+			{ kind: "user", seq: 10, time: 1000, content: [{ type: "text", text: "u10" }] },
+			{ kind: "assistant", seq: 11, time: 2000, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "text", text: "a11" }] },
+			{ kind: "user", seq: 20, time: 3000, turn: 2, content: [{ type: "text", text: "u20" }] },
+			{ kind: "assistant", seq: 22 - 0.9, time: 4000, turn: 2, step: 1, messageId: "m2", interrupted: true, blocks: [{ kind: "text", text: "PREFIX" }] },
+			{ kind: "turn-error", seq: 22, time: 5000, turn: 2, message: "boom" }
+		], requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		const tree = deriveTraceTree(snap, t);
+		const order = tree.stations.map((st) => st.kind).join(">");
+		if (order !== "user>step>user>step>error") throw new Error("SEQ1 a fractional seq reordered the timeline: " + order);
+		const fractional = tree.stations[3];
+		if (fractional.anchorKey !== null || fractional.anchorSeq !== null) {
+			throw new Error("SEQ1 a fractional seq was given a persistent anchor: " + JSON.stringify({ k: fractional.anchorKey, s: fractional.anchorSeq }));
+		}
+		if (!(tree.stations[3].turn === 2)) throw new Error("SEQ1 the prefix landed in the wrong turn: " + String(tree.stations[3].turn));
+	}
+
 	// ── SUBCUT1: a truncated sub-call list must say so, on both surfaces ─────
 	// The 2,000-node budget dropped the tail silently: a parent with 20,000 children
 	// rendered 1,999 and neither the panel nor the export mentioned it. A file that stops
