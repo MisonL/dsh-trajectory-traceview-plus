@@ -153,6 +153,30 @@
 			if (typeof afterF.blur === "function") afterF.blur();
 		}
 
+		// `End` means two different things depending on WHERE focus is, and README footnote 1
+		// now says so. Pin both so a future change cannot quietly merge them again.
+		{
+			const opt = [...document.querySelectorAll("[role=option]")];
+			const last = opt[opt.length - 1];
+			const first = opt[0];
+			if (last === void 0 || first === void 0) fail("no stations for the End-semantics check");
+			else {
+				// Focus the FIRST station so the assertion measures a MOVE. Focusing the last
+				// one first made the check pass even with the branch deleted.
+				first.focus();
+				await press("End");
+				if (document.activeElement !== last) {
+					fail("`End` on a station card moved focus to "
+						+ (document.activeElement === null ? "null" : String(document.activeElement.getAttribute("aria-label") || document.activeElement.tagName))
+						+ " instead of the last station");
+				}
+				if (selected().length === 0) fail("`End` on a station card cleared the selection; that is the panel-root behaviour");
+				root.focus();
+				await press("End");
+				if (selected().length !== 0) fail("`End` on the panel root did not return to the overview (still selected " + JSON.stringify(selected()) + ")");
+			}
+		}
+
 		// `r` toggles the request tab, but ONLY where a request exists. Pick a step
 		// station (they carry `request`) and check both directions plus the guard.
 		const stepSt = [...document.querySelectorAll(".dstv_station")]

@@ -1115,6 +1115,43 @@
 		}
 	}
 
+	// 23c) follow mode must follow the LIVE TIP, not just the overview.
+	// The scroll effect bailed out whenever a station was selected, so with 跟随 on and the
+	// newest station selected, a newly streamed record landed off-screen (measured: 13
+	// stations, station 13 selected, 14th arrives, scrollLeft unchanged, new card 268 px
+	// past the right edge).
+	{
+		const mkNodes = (n) => {
+			const out = [];
+			for (let i = 1; i <= n; i += 1) out.push({ kind: "user", seq: i * 10, time: 1000 + i * 1000, turn: i, content: [{ type: "text", text: "q" + i }] });
+			return out;
+		};
+		const snapOf = (n) => ({ eventNodes: mkNodes(n), requests: [], callSchemas: {}, runningCalls: {}, partial: null });
+		window.__store.set(snapOf(13));
+		await tick(600);
+		const sc = document.querySelector(".dstv_scroller");
+		const followBtn = [...document.querySelectorAll("button")].find((b) => /跟随/.test(((b.title || "") + (b.getAttribute("aria-label") || ""))));
+		if (sc === null) fail("no scroller for the follow check");
+		else if (followBtn === void 0) fail("the follow toggle is missing");
+		else {
+			const cardsNow = [...document.querySelectorAll("[role=option]")];
+			cardsNow[cardsNow.length - 1].click();
+			await tick(300);
+			followBtn.click();
+			await tick(350);
+			if (followBtn.getAttribute("aria-pressed") !== "true") fail("the follow toggle did not turn on");
+			window.__store.set(snapOf(14));
+			await tick(600);
+			const scrollWidth = sc.scrollWidth;
+			const clientWidth = sc.clientWidth;
+			const atEnd = Math.abs(sc.scrollLeft + clientWidth - scrollWidth) < 8;
+			if (!atEnd) fail("follow is on but the newest station is off-screen (scrollLeft " + Math.round(sc.scrollLeft) + " + " + clientWidth + " < " + scrollWidth + ")");
+			info.follow = { atEnd: true };
+			window.__store.set(Object.assign({ partial: null }, healthySnap));
+			await tick(300);
+		}
+	}
+
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
 	// invisible while the single-step copy AND the whole-trace export printed the whole

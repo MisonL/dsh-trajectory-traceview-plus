@@ -210,7 +210,7 @@ dsh plugin --profile web add "G:\path\to\dsh-trajectory-traceview-plus"
 |---|---|
 | `←` / `→` | 上一个 / 下一个站点 |
 | `Home` | 跳到第一个站点（选中它） |
-| `End` | 显示全部：回到总览，不再选中任何站点（不是"跳到最后一个站点"） |
+| `End` | 显示全部：回到总览，不再选中任何站点（不是"跳到最后一个站点"）¹ |
 | `空格` | 播放 / 暂停回放 |
 | `PageUp` / `PageDown` | 上一个 / 下一个轮次起点 |
 | `/` 或 `f` | 聚焦搜索框 |
@@ -218,6 +218,10 @@ dsh plugin --profile web add "G:\path\to\dsh-trajectory-traceview-plus"
 | `Enter` / `Shift+Enter`（搜索时） | 下一个 / 上一个命中 |
 | `Esc` | 清空搜索 / 取消 |
 | `r` | 切换「原始请求」面板 |
+
+¹ 焦点在哪决定 `End` 的含义：在**面板根**或搜索框上按 `End` 是"显示全部"（回总览）；
+焦点在**站点卡**上时按 `End` 是列表框惯例的"跳到最后一个站点"（只移动焦点，不改选中）。
+两者都写在快照里由探针逐条断言，不是"两套实现"。
 
 ## 8. 实现要点（数据来源）
 
@@ -276,8 +280,8 @@ npm test                   # 只跑 smoke
 **需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
 
 ```powershell
-node scripts/browser-check.mjs          # 起 harness，跑 257 条断言 / 记录 37 组观测
-node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 4 条断言（375px 溢出，共 38 组）
+node scripts/browser-check.mjs          # 起 harness，跑 265 条断言 / 记录 38 组观测
+node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 4 条断言（375px 溢出，共 39 组）
 ```
 
 它需要 `agent-browser`（Chrome via CDP）。**故意不进 CI**：把浏览器塞进 runner 的
