@@ -2714,10 +2714,17 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("æ­£åœ
 			for (; i < srcMs.length; i += 1) { if (srcMs[i] === "{") d += 1; else if (srcMs[i] === "}") { d -= 1; if (d === 0) { i += 1; break; } } }
 			return srcMs.slice(at, i);
 		})();
+		// `gotoMatch` records the match by STATION ID (`matchId`), not by array index, so this
+		// harness supplies the id setter and the station list. It checks the same ring position
+		// as before, plus that the recorded id belongs to the station it seeks.
 		const stepMs = (ptr, len, dir) => {
-			const out = { landed: null };
-			new Function("dir", "matchPtr", "matches", "setMatchPtr", "seek", grabMs + "\ngotoMatch(dir);")(
-				dir, ptr, Array.from({ length: len }, (_, k) => k), () => {}, (i) => { out.landed = i; });
+			const out = { landed: null, recorded: null };
+			const stationsMs = Array.from({ length: len }, (_, k) => ({ id: "st" + k }));
+			new Function("dir", "matchPtr", "matches", "setMatchId", "stations", "seek", grabMs + "\ngotoMatch(dir);")(
+				dir, ptr, Array.from({ length: len }, (_, k) => k), (id) => { out.recorded = id; }, stationsMs, (k) => { out.landed = k; });
+			if (out.recorded !== "st" + String(out.landed)) {
+				throw new Error("MATCHSTART1 the recorded match id does not belong to the station it seeks: id=" + String(out.recorded) + " index=" + String(out.landed));
+			}
 			return out.landed;
 		};
 		// From "nothing selected", the first step in each direction hits an END of the ring.
@@ -2726,8 +2733,8 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("æ­£åœ
 		// And a single match must be reachable both ways without falling off.
 		if (stepMs(-1, 1, 1) !== 0 || stepMs(-1, 1, -1) !== 0) throw new Error("MATCHSTART1 a single match is unreachable");
 		// The pointer must start at "none" â€” starting at 0 IS the bug.
-		if (!/useState\)\(-1\)/.test(srcMs.slice(srcMs.indexOf("matchPtr, setMatchPtr"), srcMs.indexOf("matchPtr, setMatchPtr") + 80))) {
-			throw new Error("MATCHSTART1 matchPtr no longer starts at -1");
+		if (!/useState\)\(null\)/.test(srcMs.slice(srcMs.indexOf("matchId, setMatchId"), srcMs.indexOf("matchId, setMatchId") + 80))) {
+			throw new Error("MATCHSTART1 the match pointer no longer starts at \"none\"");
 		}
 		// The counter must have a "no current match" branch. It only renders while a query
 		// is active, and a static render starts with an empty query, so this cannot be
@@ -4129,8 +4136,9 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("æ­£åœ
 				if (grabGm === "") throw new Error("X1-n gotoMatch is missing");
 				const driveGm = (ptr, len, dir) => {
 					const out = { ptr: null, seeked: null };
-					new Function("dir", "matchPtr", "matches", "setMatchPtr", "seek", grabGm + "\ngotoMatch(dir);")(
-						dir, ptr, Array.from({ length: len }, (_, k) => k), (v) => { out.ptr = v; }, (i) => { out.seeked = i; });
+					new Function("dir", "matchPtr", "matches", "setMatchId", "stations", "seek", grabGm + "\ngotoMatch(dir);")(
+						dir, ptr, Array.from({ length: len }, (_, k) => k), (v) => { out.ptr = v; },
+						Array.from({ length: len }, (_, k) => ({ id: "st" + k })), (k) => { out.seeked = k; });
 					return out;
 				};
 				// A stale pointer past the end must stay inside the ring: stepping back from

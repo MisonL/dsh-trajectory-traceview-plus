@@ -52,6 +52,7 @@
 - `src/50-entry.js`
 - `test/browser/fixture.js`
 - `test/browser/probe-detail.js`
+- `test/browser/probe-detail2.js`
 - `test/browser/probe-en.js`
 - `test/browser/probe.js`
 

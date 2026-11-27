@@ -29,7 +29,7 @@ run("agent-browser", ["wait", "1200"]);
 // BOTH halves share one page: the browser is opened once and the evals run in order, so
 // `probe-detail.js` continues from the state `probe.js` leaves. Split because
 // `agent-browser eval` aborts at 30 s and the single file had reached 27.4 s (§13.70).
-const probeFiles = ["test/browser/probe.js", "test/browser/probe-detail.js"];
+const probeFiles = ["test/browser/probe.js", "test/browser/probe-detail.js", "test/browser/probe-detail2.js"];
 const probe = fs.readFileSync(path.join(root, probeFiles[0]), "utf8");
 const out = run("agent-browser", ["eval", "--stdin"], probe);
 const raw = (out.stdout || "").trim();
@@ -44,16 +44,18 @@ try {
 	process.exit(1);
 }
 
-// Second half of the assertions.
-{
-	const outTail = run("agent-browser", ["eval", "--stdin"], fs.readFileSync(path.join(root, probeFiles[1]), "utf8"));
+// Remaining halves of the assertions. Each is a separate `agent-browser eval` because the
+// command aborts at 30 s; the probe was split twice for exactly that reason (§13.70). They
+// run in order on ONE page, so each continues from the state the previous one left.
+for (const rel of probeFiles.slice(1)) {
+	const outTail = run("agent-browser", ["eval", "--stdin"], fs.readFileSync(path.join(root, rel), "utf8"));
 	try {
 		const outerTail = JSON.parse((outTail.stdout || "").trim());
 		const parsedTail = JSON.parse(outerTail);
 		if (Array.isArray(parsedTail.failures)) parsed.failures.push(...parsedTail.failures);
 		Object.assign(parsed.info, parsedTail.info);
 	} catch {
-		parsed.failures.push("the second probe half did not return a parsable result");
+		parsed.failures.push(rel + " did not return a parsable result");
 	}
 }
 
