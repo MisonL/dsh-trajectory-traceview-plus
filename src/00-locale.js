@@ -62,6 +62,10 @@
 			"kpi.tokensIn": "请求 tokens",
 			"kpi.tokensOut": "生成 tokens",
 			"kpi.errors": "错误",
+			// The KPI counts STEPS that contain an error, not error events: one step with 24
+			// tool calls and 4 failures shows 1. The bare label "错误 / Errors" made that read
+			// as a wrong number; the chip says what it counts now.
+			"kpi.errorSteps": "出错步骤",
 			// The Token-usage chips were hardcoded English ("in" / "out" / "cache-read" …)
 			// inside a Chinese panel, while README §2 describes this section as
 			// "入站（含缓存读 / 写）与出站（含思考）". Same words as the README, compact
@@ -248,6 +252,7 @@
 			"kpi.tokensIn": "Prompt tokens",
 			"kpi.tokensOut": "Output tokens",
 			"kpi.errors": "Errors",
+			"kpi.errorSteps": "steps with errors",
 			"usage.in": "in",
 			"usage.fresh": "fresh",
 			"usage.cacheRead": "cache-read",

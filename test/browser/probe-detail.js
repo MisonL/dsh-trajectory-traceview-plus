@@ -288,8 +288,28 @@
 		// stayed above the floor while a promised number vanished (§13.62).
 		const kpis = [...document.querySelectorAll(".dstv_kpi")];
 		const texts = kpis.map((k) => (k.textContent || "").trim());
-		const missingKpi = ["轮次", "步骤", "工具", "错误", "工具总耗时"].filter((lb) => !texts.some((t2) => t2.indexOf(lb) >= 0));
+		const missingKpi = ["轮次", "步骤", "工具", "出错步骤", "工具总耗时"].filter((lb) => !texts.some((t2) => t2.indexOf(lb) >= 0));
 		if (missingKpi.length > 0) fail("the KPI strip is missing " + JSON.stringify(missingKpi) + " (rendered: " + JSON.stringify(texts) + ")");
+		// The label says what it counts: STEPS containing an error, not error events. The
+		// fixture has 2 error stations, so the number must be 2 — asserting only that the
+		// label exists would pass with the value stuck at 0.
+		{
+			const errKpi = kpis.find((k) => (k.textContent || "").indexOf("出错步骤") >= 0);
+			const shown = errKpi === void 0 ? null : Number((errKpi.textContent || "").replace(/[^0-9]/g, ""));
+			// The KPI counts stations that contain an error; the fixture renders at least one
+			// of them as an error CARD. Assert the number is live (a stuck counter is the
+			// failure this replaces), not an exact equality: error-kind stations and
+			// error-containing steps are both counted, and only the latter carry the card class.
+			// Count the stations whose accessible name says 出错 — the same surface the reader
+			// sees — and require the chip to agree. Asserting only that the LABEL exists let a
+			// stuck counter (always 0) pass, which is the failure mode worth guarding.
+			const errorStations = [...document.querySelectorAll("[role=option]")]
+				.filter((o) => /出错/.test(o.getAttribute("aria-label") || "")).length;
+			if (shown === null) fail("the errors KPI chip is missing");
+			else if (shown !== errorStations) {
+				fail("the errors KPI says " + shown + " but " + errorStations + " station(s) are labelled 出错");
+			}
+		}
 		// Token KPIs are conditional (only when the session reports any), so assert them by
 		// their presence-in-this-fixture rather than requiring them in every session.
 		if (!texts.some((t2) => /token|Token/.test(t2))) fail("the KPI strip shows no token figure although the fixture reports usage: " + JSON.stringify(texts));
@@ -969,6 +989,24 @@
 		await tick(300);
 		const overview = tickStops();
 		if (overview.length !== 1 || overview[0] !== 0) fail("the overview minimap should expose exactly tick 0 as its tab stop, got " + JSON.stringify(overview));
+		// (a2) `data-active` is a DIFFERENT value from the tab stop, and the two collide at
+		// tick 0: the overview is tab=1/active=0, while selecting the first station is
+		// tab=1/active=1. Hashing only the tab stop left the cached tick without
+		// `data-active`, so the strip highlighted nothing while the cards did show the
+		// selection. Assert the highlight, not just the tab stop.
+		const activeTicks = () => [...document.querySelectorAll(".dstv_miniTick")]
+			.map((t, i) => (t.getAttribute("data-active") === "true" ? i : -1))
+			.filter((i) => i >= 0);
+		if (activeTicks().length !== 0) fail("the overview must highlight no tick, got " + JSON.stringify(activeTicks()));
+		document.querySelectorAll(".dstv_miniTick")[0]?.click();
+		await tick(350);
+		const activeAfterTickZero = activeTicks();
+		if (activeAfterTickZero.length !== 1 || activeAfterTickZero[0] !== 0) {
+			fail("clicking the first tick from the overview left the minimap highlight at " + JSON.stringify(activeAfterTickZero) + " (expected [0])");
+		}
+		if (root !== null) root.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
+		await tick(300);
+
 		const cards = [...document.querySelectorAll("[role=option]")];
 		if (cards.length > 4) {
 			cards[3].click();
@@ -976,6 +1014,10 @@
 			const afterSelect = tickStops();
 			if (afterSelect.length !== 1) fail("the minimap exposes " + afterSelect.length + " tab stops after selecting a station: " + JSON.stringify(afterSelect));
 			if (afterSelect[0] !== 3) fail("the minimap tab stop is on tick " + afterSelect[0] + " but the selection is 3");
+			const activeAfterSelect = activeTicks();
+			if (activeAfterSelect.length !== 1 || activeAfterSelect[0] !== 3) {
+				fail("the minimap highlight is at " + JSON.stringify(activeAfterSelect) + " but the selection is 3");
+			}
 		}
 
 		// (b) one card's own duration is unchanged; only the OTHER station gets slower.
@@ -1001,6 +1043,42 @@
 		else if (before[0] !== "100%" || after[0] === "100%") fail("the first station's bar kept its old proportion (" + JSON.stringify(before) + " -> " + JSON.stringify(after) + ") after the OTHER station became the slowest — the global maximum is not a cache input");
 		info.cacheInputs = { tickStops: overview.length, bars: before[0] + " -> " + after[0] };
 
+		window.__store.set(Object.assign({ partial: null }, healthySnap));
+		await tick(300);
+	}
+
+	// 24) nested sub-calls must reach the screen, not just the copy.
+	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
+	// invisible while the single-step copy AND the whole-trace export printed the whole
+	// chain — the screen showed strictly less than the file you could copy from it.
+	{
+		window.__store.set({
+			eventNodes: [
+				{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: "q" }] },
+				{ kind: "assistant", seq: 2, time: 2, turn: 1, step: 1, messageId: "nm", blocks: [{ kind: "tool-call", callId: "n1", name: "task", argsRaw: "{}" }] },
+				{ kind: "tool-result", seq: 3, time: 3, turn: 1, step: 1, callId: "n1", callTime: 2, name: "task",
+					content: [{ type: "text", text: "PARENT" }],
+					subCalls: [{ callId: "n2", name: "child", argsRaw: "{}", resultText: "CHILD", durationMs: 10,
+						subCalls: [{ callId: "n3", name: "grandchild", argsRaw: "{}", resultText: "GRANDCHILD", durationMs: 5 }] }] }
+			],
+			requests: [], callSchemas: {}, runningCalls: {}, partial: null
+		});
+		await tick(500);
+		const stepCard = [...document.querySelectorAll("[role=option]")].find((o) => /步骤/.test(o.getAttribute("aria-label") || ""));
+		if (stepCard === void 0) fail("no step station to open for the nested sub-call check");
+		else {
+			stepCard.click();
+			await tick(450);
+			document.querySelectorAll(".dstv_detail details").forEach((d) => { d.open = true; });
+			await tick(250);
+			const txt = (document.querySelector(".dstv_detail") || {}).innerText || "";
+			if (!txt.includes("grandchild")) fail("a sub-sub-call never reached the detail panel (depth-2 name missing)");
+			const depths = [...document.querySelectorAll(".dstv_subCard")].map((e) => e.getAttribute("data-depth"));
+			if (depths.filter((d) => d === null).length !== 1 || depths.filter((d) => d === "1").length !== 1) {
+				fail("the nested sub-call cards are not at depths [0,1]: " + JSON.stringify(depths));
+			}
+			info.nested = { depths: depths };
+		}
 		window.__store.set(Object.assign({ partial: null }, healthySnap));
 		await tick(300);
 	}

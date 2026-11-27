@@ -1495,7 +1495,7 @@
 			// Binary search: `turnsBySeq` is already sorted. The previous linear scan ran
 			// once per compaction/special event, so a log with many of both cost
 			// O(events x turns) — measured 105 ms at 1000 turns, and it grows from there.
-			const turnForSeq = (s) => {
+			const turnForSeq = (s, turnHint) => {
 				let lo = 0;
 				let hi = turnsBySeq.length - 1;
 				let best = null;
@@ -1504,7 +1504,21 @@
 					if (turnsBySeq[mid].seq <= s) { best = turnsBySeq[mid]; lo = mid + 1; }
 					else hi = mid - 1;
 				}
-				return best ?? lastTurnEntry ?? ensureTurn(0, s);
+				if (best !== null) return best;
+				// The event sits BEFORE every turn boundary in this window. That is the normal
+				// shape after paging: a page can start on a tool RESULT whose call sits above
+				// it, and the result's own turn then has no boundary at or before its seq.
+				//
+				// The fallback used to be `lastTurnEntry` — the turn created LAST — so the
+				// orphan was filed under the newest turn and `ensureTurn` lowered that turn's
+				// seq to the orphan's. Sorting by seq then put the NEWEST turn first and split
+				// the timeline: turn 68 → 65 → 66 → 67, with ~1h52m of apparent rewind in the
+				// gap bars, and the export filed the result under the wrong turn (§13.83).
+				//
+				// Prefer the event's OWN turn when the log states one (the orphan's node
+				// carries `turn`), else the earliest turn — never the last.
+				const hinted = turnMap.get(typeof turnHint === "number" ? turnHint : NaN);
+				return hinted ?? turnsBySeq[0] ?? ensureTurn(0, s);
 			};
 			const consumedCompactionReqs = new Set();
 			// Index the exact-replacementSeq match instead of scanning every request per
@@ -1521,7 +1535,7 @@
 			}
 			for (const n of nodes) {
 				if (n.kind === "compaction") {
-					const e = turnForSeq(n.seq);
+					const e = turnForSeq(n.seq, n.turn);
 					// Pair with the compaction provider request: exact replacementSeq
 					// match first, else the nearest unconsumed compaction request that
 					// completed within a minute before this marker landed.
@@ -1586,7 +1600,7 @@
 					const e = ensureTurn(typeof n.turn === "number" ? n.turn : 0, n.seq);
 					e.stations.push({ id: `x${n.seq}`, kind: "maxTokens", time: n.time, seq: n.seq, label: t("node.maxTokens") });
 				} else if (n.kind === "command") {
-					const e = turnForSeq(n.seq);
+					const e = turnForSeq(n.seq, n.turn);
 					e.stations.push({
 						id: `c${n.seq}`, kind: "command", time: n.time, seq: n.seq,
 						name: asText(n.name) !== "" ? asText(n.name) : `/${asText(n.commandId) || "?"}`, args: asText(n.args),
@@ -1597,7 +1611,7 @@
 					// The contract's own fallback surface. Rendering nothing would hide a
 					// real event that exists in the session log, and the review tool's whole
 					// promise is that what the log recorded is what the reader sees.
-					const e = turnForSeq(n.seq);
+					const e = turnForSeq(n.seq, n.turn);
 					e.stations.push({
 						id: `k${n.seq}`, kind: "unknown", time: n.time, seq: n.seq,
 						eventType: typeof n.type === "string" ? n.type : "",
@@ -1639,7 +1653,7 @@
 					return `ot${base}${seen === 0 ? "" : `_${String(seen)}`}`;
 				};
 				for (const n of orphans) {
-					const e = turnForSeq(n.seq);
+					const e = turnForSeq(n.seq, n.turn);
 					const text = blocksText(n.content, t);
 					const subCalls = mapSubCalls(n.subCalls, t);
 					// Anchor issuance is centralized in the "special stations" branch below
@@ -2279,7 +2293,22 @@
 			// "[object Object]".
 			return asText(content)
 				.replace(/`{3,}/g, (run) => "\\`".repeat(run.length))
-				.replace(/<(\/?)(details)\b/gi, "&lt;$1$2");
+				.replace(/<(\/?)(details)\b/gi, "&lt;$1$2")
+				// A content line that starts with `#` becomes a real heading in the export and
+				// silently re-sections the document (measured: a compaction summary containing
+				// "### 伪造标题" produced a section the panel never showed). Escaping turns it
+				// back into text; a Markdown renderer still displays the bare `#`.
+				.replace(/^(\s*)(#{1,6})\s/gm, "$1\\$2 ");
+		}
+		/**
+		 * Free text that sits INSIDE a generated line (a heading, a label).
+		 *
+		 * `proseSafe` keeps newlines, which is right for a paragraph and wrong for a heading:
+		 * a tool name or a slash-command's arguments containing "\n### …" forges a section in
+		 * the exported Markdown. Flatten first, then apply the same escaping.
+		 */
+		function inlineSafe(content) {
+			return proseSafe(asText(content).replace(/\s+/g, " ").trim());
 		}
 		function fencedBlock(content, lang) {
 			const text = String(content ?? "");
@@ -2577,11 +2606,11 @@
 					if (st.displayText !== "") { L.push(""); L.push(...fencedBlock(st.displayText.length > 4000 ? `${st.displayText.slice(0, 4000)}\n…(${fmtInt(st.displayText.length)} ${t("detail.chars")})` : st.displayText)); }
 				} else if (st.kind === "compaction") {
 					L.push(`### ♺ ${st.label}${Number.isSafeInteger(st.count) ? ` _(${numOr(st.count)} ${t("meta.steps")} / ${fmtTokens(st.tokens)} ${t("meta.tokens")})_` : ""}`);
-					if (st.summary !== "") { L.push(""); L.push(st.summary); }
-					if (st.crequest?.outputText) { L.push(""); L.push(`<details><summary>${t("detail.compactionOutput")}</summary>`); L.push(""); L.push(st.crequest.outputText); L.push("</details>"); }
+					if (st.summary !== "") { L.push(""); L.push(proseSafe(st.summary)); }
+					if (st.crequest?.outputText) { L.push(""); L.push(`<details><summary>${t("detail.compactionOutput")}</summary>`); L.push(""); L.push(proseSafe(st.crequest.outputText)); L.push("</details>"); }
 				} else if (st.kind === "error") {
 					L.push(`### ✗ ${st.label}${st.code != null ? ` \`${st.code}\`` : ""}`);
-					L.push(""); L.push(st.message || "…");
+					L.push(""); L.push(st.message ? proseSafe(st.message) : "…");
 				} else if (st.kind === "retry") {
 					// The detail panel shows the retry counter, the provider and the error
 					// code; the export showed none of them, so the Markdown copy of a failed
@@ -2594,12 +2623,12 @@
 					if (st.code != null) retryBits.push(`code: ${st.code}`);
 					if (st.retryState) retryBits.push(String(st.retryState));
 					L.push(`### ↻ ${st.label}${retryBits.length > 0 ? ` (${retryBits.join(" · ")})` : ""}`);
-					if (st.message) { L.push(""); L.push(st.message); }
+					if (st.message) { L.push(""); L.push(proseSafe(st.message)); }
 				} else if (st.kind === "maxTokens") {
 					L.push(`### ⛔ ${st.label}`);
 				} else if (st.kind === "command") {
-					L.push(`### ⚡ /${st.name}${st.args !== "" ? ` ${st.args}` : ""}`);
-					if (st.outcomeText) { L.push(""); L.push(st.outcomeText); }
+					L.push(`### ⚡ /${inlineSafe(st.name)}${st.args !== "" ? ` ${inlineSafe(st.args)}` : ""}`);
+					if (st.outcomeText) { L.push(""); L.push(proseSafe(st.outcomeText)); }
 				} else if (st.kind === "unknown") {
 					L.push(`### ? ${t("node.unknown")}${st.eventType ? ` \`${st.eventType}\`` : ""}`);
 					if (st.payload) { L.push(""); L.push(...fencedBlock(st.payload, "json")); }

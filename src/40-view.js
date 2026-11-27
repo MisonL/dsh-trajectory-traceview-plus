@@ -296,6 +296,10 @@
 			// applied to a completely different transcript. `sessionKey` arrives from the
 			// slot's `inject`; when the host does not provide one, behaviour is unchanged.
 			const sessionRef = (0, react.useRef)(sessionKey);
+			// The session key that the CURRENT `revealed`/`query` values belong to. They lag one
+			// render behind a key change (the clear is scheduled, not applied), and writing that
+			// pair under the new key leaked one session's position into another.
+			const stateKeyRef = (0, react.useRef)(sessionKey);
 			// ── view state that survives a tab switch ─────────────────────────────
 			// The host UNMOUNTS this panel when the reader looks at the conversation and
 			// remounts it on return (measured: root count 0 → 1). Without this, every
@@ -425,10 +429,32 @@
 				setOlderNote(null);
 				setPanelFull(false);
 				setTab("detail");
+				// The anchor box kept the previous conversation's text: harmless (it is not
+				// stored, and the note is fixed wording) but it reads as if it still referred to
+				// the session on screen. Everything else in this reset block is per-session, so
+				// this belongs here too.
+				setAnchorInput("");
+				setAnchorNote(null);
 			}, [sessionKey]);
 
 			// Remember where the reader was, so a host-initiated remount resumes there.
+			//
+			// The key and the VALUES can belong to different sessions for one render: when
+			// `sessionKey` changes, the reset effect above only SCHEDULES the clear, so this
+			// effect still sees the previous session's `revealed`/`query` next to the NEW key.
+			// Writing that pair files session A's position under session B, and the next mount
+			// of B then restores a selection it never had.
+			//
+			// HONEST LIMIT: probe group 8b catches the SYMPTOM ("view state leaked into
+			// another session") but does not isolate this guard — removing it leaves the probe
+			// green in 2/2 runs (§13.78 hit the same wall with the cache-scope clear). The guard
+			// stays because the mis-write is wrong on its face, not because a red would prove it.
 			(0, react.useEffect)(() => {
+				if (stateKeyRef.current !== sessionKey) {
+					// Values in this render still belong to the previous session; drop them.
+					stateKeyRef.current = sessionKey;
+					return;
+				}
 				writeViewState(sessionKey, revealed, queryRaw);
 			}, [sessionKey, revealed, queryRaw]);
 
@@ -1207,7 +1233,12 @@
 								type: "search",
 								autoComplete: "off",
 								"aria-label": t("search.label"),
-								value: query,
+								// Bind the RAW text, not the trimmed match string. Rendering the
+								// trimmed value made a controlled input swallow the space the user
+								// had just typed: "alpha␣" was re-rendered as "alpha", so the next
+								// word ran into it ("alphabeta") and a phrase search could never be
+								// typed one key at a time. Matching still uses `query` (trimmed).
+								value: queryRaw,
 								placeholder: t("action.search"),
 								onChange: (ev) => setQueryRaw(ev.target != null ? ev.target.value : ""),
 								onKeyDown: onSearchKey
@@ -1383,7 +1414,12 @@
 				// stats.toolMs`), not by this station's own maximum. Mixing only the station
 				// fields meant every cached bar kept its old width when a DIFFERENT station
 				// became the slowest one — a stale proportion bar, caught by review.
-				mix(stats.maxToolMs); mix(stats.toolMs);
+				// Hash the EFFECTIVE denominator, not both inputs. `stats.toolMs` is only a
+				// fallback for a zero max, but hashing it made every card depend on the SUM of
+				// all tool durations: one slow tool changed the total, so a 900-station window
+				// rebuilt all 900 cards to widen a single bar. Measured by the perf review:
+				// 900 rebuilds -> 1 with the effective denominator.
+				mix(Math.max(1, stats.maxToolMs || stats.toolMs));
 				mix(s.outcomeText); mix(s.outcomeKind);
 				if (Array.isArray(s.meta)) { mix(s.meta.length); for (const m of s.meta) mix(m); }
 				else mix(s.meta);
@@ -1403,6 +1439,49 @@
 				} else mix(-1);
 				return h.toString(36);
 			};
+			/**
+			 * Sub-calls can nest (a tool that itself calls tools). The detail panel rendered
+			 * ONE level: everything from `sub.subCalls` down was invisible, while both the
+			 * single-step copy and the whole-trace export printed the whole chain — so the
+			 * screen showed strictly less than the file you could copy from it.
+			 *
+			 * Recursive now. `depth` only feeds the React key and a data attribute; there is
+			 * no visual indentation budget to blow.
+			 */
+			const renderSubCalls = (subs, depth) => subs.map((sub, i) => {
+				const subPretty = prettyArgs(sub.argsRaw);
+				const nested = Array.isArray(sub.subCalls) ? sub.subCalls : [];
+				return jsxs("div", {
+					className: "dstv_subCard",
+					"data-depth": depth > 0 ? String(depth) : undefined,
+					children: [
+						jsxs("span", {
+							className: "dstv_subHead",
+							children: [
+								sub.running ? jsx("i", { className: "dstv_dot", "data-live": true }, "sIcon") : sub.isError ? jsx("span", { className: "dstv_bad", children: "✗" }, "sIcon") : jsx("span", { className: "dstv_ok", children: "✓" }, "sIcon"),
+								jsx("span", { className: "tname", children: `${depth > 0 ? "↳↳" : "↳"} ${sub.name}` }, "sName"),
+								jsx("span", { className: "dstv_chips", children: [
+									sub.running ? jsx("span", { className: "dstv_chip run", children: t("chip.running") }, "sRun") : null,
+									sub.isError ? jsx("span", { className: "dstv_chip err", children: sub.errorName != null ? String(sub.errorName) : t("chip.error") }, "sErr") : null,
+									sub.durationMs != null ? jsx("span", { className: "dstv_chip", children: fmtMs(sub.durationMs) }, "sDur") : null
+								] }, "sChips")
+							]
+						}, "sHead"),
+						sub.argsRaw !== "" ? jsxs("details", { className: "dstv_det", open: false, children: [
+							jsx("summary", { children: [t("detail.args"), jsx("span", { className: "sub", children: `${sub.argsRaw.length}${t("detail.chars")}` }, "sALen")] }, "sASum"),
+							jsx("div", { className: "inner", children: jsx("div", { className: "dstv_code", children: subPretty !== "" ? subPretty : t("detail.noArgs") }, "sACode") }, "sAInner")
+						] }, "sArgs") : null,
+						sub.resultText !== "" ? jsxs("details", { className: "dstv_det", open: sub.isError, children: [
+							jsx("summary", { children: [sub.isError ? `✗ ${t("detail.result")}` : `✓ ${t("detail.result")}`, jsx("span", { className: "sub", children: String(sub.resultText.length) }, "sRLen")] }, "sRSum"),
+							jsx("div", { className: "inner", children: jsxs("div", { children: [
+								jsx(CopyBtn, { text: sub.resultText, label: t("detail.copy"), okLabel: t("detail.copied"), failLabel: t("anchor.copyFailed") }, "sResCopy"),
+								jsx("div", { className: "dstv_code", style: { marginTop: 4 }, children: sub.resultText }, "sResCode")
+							] }) }, "sRInner")
+						] }, "sRes") : null,
+						nested.length > 0 ? jsx("div", { className: "dstv_subKids", children: renderSubCalls(nested, depth + 1) }, "sKids") : null
+					]
+				}, `ts${depth}-${i}`);
+			});
 			const renderStationCard = (s, cardKey) => {
 				if (s.kind === "user") {
 					return jsxs("div", {
@@ -1577,6 +1656,15 @@
 					if (s.kind === "maxTokens") k = "error";
 					const done = reached && (s.kind !== "step" || !s.live);
 					const matched = searching && matchSet.has(i);
+					// Two DIFFERENT derived values, and the signature must hash each one.
+					// `data-active` is `revealed !== null && i === R - 1`; the tab stop is that
+					// OR the overview's first tick. Hashing only the tab stop made the two states
+					// collide at i == 0: overview gives tab=1/active=0, selecting the first
+					// station gives tab=1/active=1, so the cached tick kept `data-active`
+					// undefined and the strip highlighted nothing (measured: three stations,
+					// overview, click tick 0 → cards show selection 0, minimap active set []).
+					const tickActive = revealed !== null && i === R - 1;
+					const tickTab = tickActive || (revealed === null && i === 0);
 					// Same element-identity trick as the station cards: an unchanged tick keeps
 					// its element and React skips it (§13.72).
 					const tickSig = s.kind + "\u0002" + String(i) + "\u0002" + (reached ? "1" : "0")
@@ -1590,7 +1678,8 @@
 						// overview half (`revealed === null && i === 0`). Hashing only the active
 						// half left tick 0 with `tabIndex: 0` after any selection, so the strip had
 						// TWO tab stops (measured: [0, 5] after selecting station 5).
-						+ "\u0002" + ((revealed !== null && i === R - 1) || (revealed === null && i === 0) ? "1" : "0")
+						+ "\u0002" + (tickTab ? "1" : "0")
+						+ "\u0002" + (tickActive ? "1" : "0")
 						// `data-k` reads the DERIVED kind, which is "tool" for a step that contains
 						// one — hash the value actually used rather than re-deriving it here.
 						+ "\u0002" + k
@@ -1605,7 +1694,7 @@
 						"data-k": k,
 						"data-done": done ? "true" : undefined,
 						"data-dim": reached ? undefined : "true",
-						"data-active": revealed !== null && i === R - 1 ? "true" : undefined,
+						"data-active": tickActive ? "true" : undefined,
 						"data-live": s.kind === "step" && s.live === true ? "true" : undefined,
 						"data-match": matched ? "true" : undefined,
 						// Roving tabindex, same as the station list. This strip is a SECOND
@@ -1616,7 +1705,7 @@
 						// ...but exactly one tick must stay reachable, or the whole strip
 						// disappears from the keyboard in the overview state. Same rule as
 						// the station list: the active one, else the first.
-						tabIndex: (revealed !== null && i === R - 1) || (revealed === null && i === 0) ? 0 : -1,
+						tabIndex: tickTab ? 0 : -1,
 						// `s.label` is undefined for user stations, so the tooltip read
 						// "undefined · 6:13:20 AM" and the button had no accessible name at
 						// all. Fall back to the kind and always expose aria-label.
@@ -1911,37 +2000,7 @@
 									jsx("summary", { children: [`${t("detail.subCalls")} (${cell.subCalls.length})`, cell.subCalls.some((sub) => sub.isError) ? jsx("span", { className: "dstv_chip err", children: t("chip.error") }, "tSubErr") : null] }, "tSubSum"),
 									jsx("div", {
 										className: "inner",
-										children: cell.subCalls.map((sub, i) => {
-											const subPretty = prettyArgs(sub.argsRaw);
-											return jsxs("div", {
-												className: "dstv_subCard",
-												children: [
-													jsxs("span", {
-														className: "dstv_subHead",
-														children: [
-															sub.running ? jsx("i", { className: "dstv_dot", "data-live": true }, "sIcon") : sub.isError ? jsx("span", { className: "dstv_bad", children: "✗" }, "sIcon") : jsx("span", { className: "dstv_ok", children: "✓" }, "sIcon"),
-															jsx("span", { className: "tname", children: `↳ ${sub.name}` }, "sName"),
-															jsx("span", { className: "dstv_chips", children: [
-																sub.running ? jsx("span", { className: "dstv_chip run", children: t("chip.running") }, "sRun") : null,
-																sub.isError ? jsx("span", { className: "dstv_chip err", children: sub.errorName != null ? String(sub.errorName) : t("chip.error") }, "sErr") : null,
-																sub.durationMs != null ? jsx("span", { className: "dstv_chip", children: fmtMs(sub.durationMs) }, "sDur") : null
-															] }, "sChips")
-														]
-													}, "sHead"),
-													sub.argsRaw !== "" ? jsxs("details", { className: "dstv_det", open: false, children: [
-														jsx("summary", { children: [t("detail.args"), jsx("span", { className: "sub", children: `${sub.argsRaw.length}${t("detail.chars")}` }, "sALen")] }, "sArgSum"),
-														jsx("div", { className: "inner", children: jsx("div", { className: "dstv_code", children: subPretty !== "" ? subPretty : t("detail.noArgs") }, "sArgCode") }, "sArgInner")
-													] }, "sArgs") : null,
-													sub.resultText !== "" ? jsxs("details", { className: "dstv_det", open: sub.isError, children: [
-														jsx("summary", { children: [sub.isError ? `✗ ${t("detail.result")}` : `✓ ${t("detail.result")}`, jsx("span", { className: "sub", children: String(sub.resultText.length) }, "sRLen")] }, "sResSum"),
-														jsx("div", { className: "inner", children: jsxs("div", { children: [
-															jsx(CopyBtn, { text: sub.resultText, label: t("detail.copy"), okLabel: t("detail.copied"), failLabel: t("anchor.copyFailed") }, "sResCopy"),
-															jsx("div", { className: "dstv_code", style: { marginTop: 4 }, children: sub.resultText }, "sResCode")
-														] }) }, "sResInner")
-													] }, "sRes") : null
-												]
-											}, `ts${i}`);
-										})
+										children: renderSubCalls(cell.subCalls, 0)
 									}, "tSubInner")
 								] }, `ds${cell.id}`) : null
 							] }, `dt${cell.id}`);
@@ -2291,7 +2350,7 @@
 					jsxs("span", { className: "dstv_kpi", children: [jsx("b", { children: String(stats.turns) }, "kvNum"), jsx("span", { children: t("node.turn") }, "kvLbl")] }, "kTurns"),
 					jsxs("span", { className: "dstv_kpi", children: [jsx("b", { children: String(stats.steps) }, "kvNum"), jsx("span", { children: t("node.step") }, "kvLbl")] }, "kSteps"),
 					jsxs("span", { className: "dstv_kpi", children: [jsx("b", { children: String(stats.tools) }, "kvNum"), jsx("span", { children: t("node.tool") }, "kvLbl")] }, "kTools"),
-					jsxs("span", { className: `dstv_kpi${stats.errors > 0 ? " err" : ""}`, children: [jsx("b", { children: String(stats.errors) }, "kvNum"), jsx("span", { children: t("kpi.errors") }, "kvLbl")] }, "kErr"),
+					jsxs("span", { className: `dstv_kpi${stats.errors > 0 ? " err" : ""}`, children: [jsx("b", { children: String(stats.errors) }, "kvNum"), jsx("span", { children: t("kpi.errorSteps") }, "kvLbl")] }, "kErr"),
 					jsxs("span", { className: "dstv_kpi", children: [jsx("b", { children: fmtDur(stats.toolMs) }, "kvNum"), jsx("span", { children: t("kpi.toolTime") }, "kvLbl")] }, "kDur"),
 					stats.tokensIn > 0 ? jsxs("span", { className: "dstv_kpi", children: [jsx("b", { children: fmtTokens(stats.tokensIn) }, "kvNum"), jsx("span", { children: t("kpi.tokensIn") }, "kvLbl")] }, "kTokIn") : null,
 					stats.tokensOut > 0 ? jsxs("span", { className: "dstv_kpi", children: [jsx("b", { children: fmtTokens(stats.tokensOut) }, "kvNum"), jsx("span", { children: t("kpi.tokensOut") }, "kvLbl")] }, "kTokOut") : null,

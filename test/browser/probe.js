@@ -162,6 +162,42 @@
 		if (counter === null) fail("the match counter did not render");
 		else if (counter.textContent.indexOf("–/") < 0) fail("a fresh query already claims a position: " + counter.textContent);
 		if (selected().length !== 0) fail("typing a query moved the view before any navigation");
+		// The box must keep what the user typed, spaces included. Binding the trimmed
+		// match string instead made a controlled input swallow the trailing space on every
+		// keystroke, so "alpha beta" could not be typed one key at a time (it became
+		// "alphabeta"). Assert the INPUT VALUE, which is the only place this shows up.
+		{
+			const keep = input.value;
+			// A TRAILING space is the case that broke: trim() strips it, so the controlled
+			// input re-rendered without it and the next word ran into the previous one.
+			const spaced = "报错 ";
+			setter.call(input, spaced);
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+			await tick();
+			if (input.value !== spaced) fail("the search box rewrote the typed text: " + JSON.stringify(spaced) + " -> " + JSON.stringify(input.value));
+			setter.call(input, keep);
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+			await tick();
+		}
+		// The non-matching cards must actually LOOK dimmed. The rule used to name
+		// `.dstv_listbox`, which no element carries — the row is `.dstv_hflow` — so the
+		// container attribute was set, the minimap dimmed, and every card stayed at full
+		// opacity. Asserting the attribute (or the class list) would have passed; only the
+		// computed style proves the reader can tell matches from non-matches.
+		{
+			const probeCard = document.querySelector(".dstv_station:not([data-dim=true]):not([data-match=true]) .dstv_hcard");
+			const matchCard = document.querySelector(".dstv_station[data-match=true] .dstv_hcard");
+			if (probeCard === null) {
+				// Every station matched: a legitimate outcome of this fixture, nothing to dim.
+				if (matchCard === null) fail("the search left neither a matched nor a non-matched card, so dimming cannot be observed");
+			} else {
+				const dimmedOpacity = Number(getComputedStyle(probeCard).opacity);
+				if (!(dimmedOpacity < 1)) fail("a non-matching card is not dimmed while searching (opacity " + String(dimmedOpacity) + ")");
+				if (matchCard !== null && Number(getComputedStyle(matchCard).opacity) !== 1) {
+					fail("a MATCHING card is dimmed while searching (opacity " + getComputedStyle(matchCard).opacity + ")");
+				}
+			}
+		}
 		const next = [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "下一个命中");
 		const prev = [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "上一个命中");
 		if (next === undefined || prev === undefined) fail("the prev/next match buttons are missing");

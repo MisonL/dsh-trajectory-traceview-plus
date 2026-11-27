@@ -241,7 +241,9 @@ dsh plugin --profile web add "G:\path\to\dsh-trajectory-traceview-plus"
 
 ## 10. 安全与合规
 
-- **只读**：只读取会话视图已生成的 `TrajectorySnapshot` 快照并渲染；不修改 DOM 业务结构、不修改 / 删除任何文件、无宿主路由、不访问网络。
+- **只读**：只读取会话视图已生成的 `TrajectorySnapshot` 快照并渲染；不修改 / 删除任何文件、无宿主路由、不访问网络。
+  唯一的例外写在明处：为了通过 DevTools 的表单审计，插件会给宿主里**没有 `id` 也没有 `name`** 的
+  `input/textarea/select` 补一个 `id` 属性（只写 `id`，不读不改 `value`、不加 `name`、不动结构与数据）。
 - **本地数据**：所有数据均在浏览器内处理；原始请求只在主动打开面板时才重建，不会上传到任何地方。
 - **唯一的写入：`sessionStorage` 里两条视图状态**。为了在宿主重新挂载面板时不把你打回「总览 + 空搜索框」，每个会话存一条
   `dstv:view:1:<会话键>`，内容是 `{ revealed, query }`——已展开到哪个位置（数字）和搜索框里的文字（≤200 字符）。
@@ -264,8 +266,8 @@ node scripts/provenance.mjs
 改了 `src/`却忘了重建时，`--check`会失败，`test/smoke.test.cjs`也会报 `BUILD1`。`lib/index.js`（宿主半部）是无操作桩；`lib/client.js`是经典脚本（`window.__ModuleLoader__.load`），由客户端模块系统直接服务。
 
 ```powershell
-npm run check              # 9 步：build --check / provenance --check / version-check / doc-ref-check
-                           #       doc-heading-check / smoke / readme-numbers / shortcut-check / harness-stamp
+npm run check              # 10 步：build --check / provenance --check / version-check / doc-ref-check
+                           #       doc-heading-check / smoke / readme-numbers / shortcut-check / harness-stamp / path-leak-check
 npm test                   # 只跑 smoke
 ```
 
@@ -274,8 +276,8 @@ npm test                   # 只跑 smoke
 **需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
 
 ```powershell
-node scripts/browser-check.mjs          # 起 harness，跑 230 条断言 / 记录 35 组观测
-node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 4 条断言（375px 溢出，共 35 组）
+node scripts/browser-check.mjs          # 起 harness，跑 242 条断言 / 记录 36 组观测
+node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 4 条断言（375px 溢出，共 37 组）
 ```
 
 它需要 `agent-browser`（Chrome via CDP）。**故意不进 CI**：把浏览器塞进 runner 的
@@ -338,7 +340,7 @@ MIT。原版 © [AFAP](https://github.com/AFAP/dsh-trajectory-traceview)；本�
 # 1-3 改内容
 #   改 package.json 的 version、补 CHANGELOG.md 的版本条目
 node scripts/provenance.mjs              # 4. 刷新来源清单（新增/改名文件后必须重跑）
-npm run check                            # 5. 9 步门禁，全绿再往下
+npm run check                            # 5. 10 步门禁，全绿再往下
 git add -A; git commit -m "..."          # 6.
 git push origin main                     # 7.
 git tag -a v0.11.5 -m "..."              # 8.
@@ -365,10 +367,11 @@ node scripts/release-status.mjs          # 12. 四处对齐了吗？（tag / Rel
 `version-check`、`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers、shortcut-check
 （前面还有一步 `npm ci --include=dev` 装依赖）。
 
-本地 `npm run check` 跑其中 9 步（`build-client --check`、`provenance --check`、`version-check`、
-`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers、shortcut-check、harness-stamp 共 9 项，
-最后一项确认手工打开 `harness.html` 前它没有内联旧 bundle）——只差 CI 里的
-`node --check lib/client.js`，够用于日常提交；发布前再按 §11 把 `browser-check` 也跑一遍。
+本地 `npm run check` 跑其中 10 步（`build-client --check`、`provenance --check`、`version-check`、
+`doc-ref-check`、`doc-heading-check`、smoke、readme-numbers、shortcut-check、harness-stamp、path-leak-check）
+——只差 CI 里的 `node --check lib/client.js`，够用于日常提交；发布前再按 §11 把 `browser-check`
+也跑一遍。其中 `harness-stamp` 确认手工打开 `harness.html` 前它没有内联旧 bundle，
+`path-leak-check` 确认随包发布的文件里没有本机绝对路径。
 
 **这些数字本身也有门禁**：`readme-numbers` 直接从 `check.yml`、`package.json` 和
 `test/browser/probe.js` 数出真值，再回头核对两份 README——同一个数字在文档里写过

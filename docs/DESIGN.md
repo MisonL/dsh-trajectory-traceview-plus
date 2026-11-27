@@ -189,7 +189,7 @@
 
 ### D5 — 身份与打包改造（**已落地，2026-11-12**）
 
-下表"本方案"列已全部实施并实测（`refactor(D5)` 提交）。实测方式：`dsh plugin --profile web remove dsh-trajectory-traceview` → `add /Volumes/Work/code/dsh-trajectory-traceview-plus` → 重启 → 页面断言 style 标签为 `dsh-trajectory-traceview-plus/traceview.css`、页签仍为 3 个、77 站点 / 72 步骤跨度 / 5 孤立站点 —— 全部符合。
+下表"本方案"列已全部实施并实测（`refactor(D5)` 提交）。实测方式：`dsh plugin --profile web remove dsh-trajectory-traceview` → `add <repo>` → 重启 → 页面断言 style 标签为 `dsh-trajectory-traceview-plus/traceview.css`、页签仍为 3 个、77 站点 / 72 步骤跨度 / 5 孤立站点 —— 全部符合。
 
 > 顺带修正一处判断：变更 `package.json` 的 `name` 之后，**必须先 remove 旧包名再 add**，否则 pnpm 的 link 目录名（旧名）与包内 `name`（新名）不一致，profile 里会留下一个指向同一目录、却以旧名注册的依赖。
 
@@ -833,7 +833,7 @@ D2 从"全史检索"降级为"已加载窗口内检索"后，代码上的实际�
 | 忽略 `loading` 状态 | 红 |
 | 把 `hasMore !== true` 写成 `if (hasMore)` | 红 |
 
-**真实数据验证**（本机 web profile，2026-11-12 21:5x，装的是本仓库代码，`dsh plugin --profile web add /Volumes/Work/code/dsh-trajectory-traceview-plus`）：
+**真实数据验证**（本机 web profile，2026-11-12 21:5x，装的是本仓库代码，`dsh plugin --profile web add <repo>`）：
 
 | 观测 | 值 |
 |---|---|
@@ -3114,7 +3114,7 @@ if (after[selIdx].id === selId) throw new Error("position and identity must dive
 
 #### 五、浏览器环境的诚实记录
 
-宿主重启后，`/Users/mison/Documents/New project` 下所有会话点击后都显示"重试"，会话列表有时完全不渲染。控制台无报错。这是**宿主/会话数据侧的问题，不是插件问题**（插件在 view 里根本没拿到快照）。
+宿主重启后，`<workdir>` 下所有会话点击后都显示"重试"，会话列表有时完全不渲染。控制台无报错。这是**宿主/会话数据侧的问题，不是插件问题**（插件在 view 里根本没拿到快照）。
 
 因此本轮所有结论都来自**纯函数 + 真实代码执行**，没有 DOM 级验收。这一点必须明确，不能把"离线验证通过"说成"功能正常"。
 
@@ -3417,7 +3417,7 @@ DSH 客户端模块系统直接抓取 `lib/client.js` 这一个经典脚本，�
 
 #### 六、安装态验证（用户明确要求"安装好运行中的插件"）
 
-- 符号链接：`~/.dsh/profiles/web/node_modules/dsh-trajectory-traceview-plus -> /Volumes/Work/code/dsh-trajectory-traceview-plus` ✓
+- 符号链接：`~/.dsh/profiles/web/node_modules/dsh-trajectory-traceview-plus -> <repo>` ✓
 - 从宿主实际抓取的合包里逐段查找最新代码：`TITLE_PREVIEW_CHARS`、`buildNext`、`dstv_visuallyHidden` **全部存在** ✓
 - 结论：宿主提供的正是当前源码，无需重装。
 
@@ -5546,7 +5546,7 @@ document.scrollWidth = 384  →  整页横向滚动 9px
 
 #### 怎么跑的
 
-这台机器上 `web` profile 里装的就是这个仓库的软链（`dsh-trajectory-traceview-plus: link:/Volumes/Work/code/dsh-trajectory-traceview-plus`），所以 `dsh web` 起来的宿主加载的就是**当前源码**。
+这台机器上 `web` profile 里装的就是这个仓库的软链（`dsh-trajectory-traceview-plus: link:<repo>`），所以 `dsh web` 起来的宿主加载的就是**当前源码**。
 
 ```
 dsh web --no-open --port 0    → http://127.0.0.1:55979/?token=…
@@ -6472,7 +6472,7 @@ tool/result记录71,444
 #### 实际执行
 
 1. GitHub仓库改名 → `MisonL/dsh-trajectory-traceview-plus`（旧名由 GitHub自动重定向）
-2.本地目录 → `/Volumes/Work/code/dsh-trajectory-traceview-plus`
+2.本地目录 → `<repo>`
 3. `git remote origin`、`package.json repository.url`同步
 4. README ×2的 Release徽章与链接改新仓库（**上游 AFAP引用保持不变**，那是事实陈述，不是自指）
 5. `docs/DESIGN.md`4处硬编码旧路径改为新路径
@@ -6802,7 +6802,7 @@ dsh plugin --profile releasecheck add --save-exact dsh-trajectory-traceview-plus
 |临时 profile 已删除 |`~/.dsh/profiles/releasecheck` 不存在；现存只有 desktop/dsh-tui/headless/node_modules/web |
 |无残留进程 |`pgrep -fl releasecheck` 无输出 |
 |未碰 3080 |worker 没有启动宿主，只用 `--dump-config` 做静态确认 |
-|web profile 未被动 |仍是 `link:/Volumes/Work/code/dsh-trajectory-traceview-plus` |
+|web profile 未被动 |仍是 `link:<repo>` |
 |仓库未被改 |工作区 0、HEAD 仍是 a147246 |
 |registry 真实可达 |`npm view --prefer-online` → `0.10.0` |
 
@@ -7123,7 +7123,7 @@ scripts/browser-harness.mjs
 ```js
 const candidates = [
 	process.env.DSH_THEME_CSS,
-	"/Users/mison/.nvm/versions/node/v24.22.1/lib/node_modules/.../design-platform.css"
+	"$NODE_HOME/lib/node_modules/.../design-platform.css"
 ];
 ```
 
@@ -10530,7 +10530,7 @@ window.__setLocaleInPlace = function (lang) {
 
 ```
 ~/.dsh/profiles/web/package.json
-  "dsh-trajectory-traceview-plus": "file:/Volumes/Work/code/dsh-trajectory-traceview-plus"
+  "dsh-trajectory-traceview-plus": "file:<repo>"
 
 ~/.dsh/profiles/web/node_modules/dsh-trajectory-traceview-plus/
   实体拷贝（不是 symlink），日期 Nov 25 12:36，版本 0.11.3
@@ -10551,7 +10551,7 @@ window.__setLocaleInPlace = function (lang) {
 #### 更新的命令
 
 ```bash
-dsh plugin --profile web add file:/Volumes/Work/code/dsh-trajectory-traceview-plus
+dsh plugin --profile web add file:<repo>
 # 然后重启 dsh web —— 插件模块是启动时加载的
 ```
 
@@ -10670,3 +10670,69 @@ boundary: false     ← 没有渲染失败卡
 
 这个会话有 340 次 compaction、200 条 request/header，所以"2 条请求定位不到步骤"是
 **窗口边界上的真实条件**，不是丢数据；它在页头以显式警告出现，而不是静默吞掉。符合设计。
+
+### 13.83 四路只读审查：修了 9 条，留了 7 条没修（2026-11-27）
+
+§13.82 之后做了一轮"全维度全场景"审查：**两个 Codex worker**（Orca 派发，只读）+
+**本项目自己的两个 subagent**（发布一致性、测试有效性、安全隐私、真实数据对抗）。
+四个审查员都固定在同一个提交上，都没有改仓库。
+
+结论先说：**0.11.5 有三个用户看得见的 bug**（翻页后时间轴倒序、搜索淡化从没生效、minimap
+首站不高亮），**一个性能倒退**（一条工具变慢就重建整窗），**一个导出结构缺陷**（6 处自由
+文本未转义）。全部已修，每条都有能变红的断言或同会话对照数字。
+
+#### 修掉的
+
+| # | 问题 | 关键证据 | 守卫 |
+|---|---|---|---|
+| 1 | 翻页窗口从工具结果开头时，时间轴倒序 68→65→66→67 | 5 节点最小复现；真实会话 24 站后倒退 1h52m | `ORDER1`（变异：还原兜底 → 红） |
+| 2 | 搜索淡化规则选了不存在的 `.dstv_listbox` | 搜索时卡片 `opacity:1`、刻度 `0.25` | 计算样式断言（不匹配 <1、匹配 =1） |
+| 3 | minimap 首站 `data-active` 命中旧缓存 | 总览点第 1 刻：卡选中、`[data-active]` 为 `[]` | 高亮集合断言（变异 → 红） |
+| 4 | 搜索框吞尾随空格 | 逐键 `alpha` → `alpha` → `alphabeta` | 输入值断言（变异 → 红） |
+| 5 | 详情只渲染一层子调用 | depth-2 名字在面板里没有、导出里却有 | 第 24 组 |
+| 6 | 导出 6 处自由文本未转义 | 压缩摘要伪造出 `### 伪造标题` | `EXPORT2`（变异 → 红） |
+| 7 | 跨会话写视图状态 | —— | **无**（见下） |
+| 8 | 锚点框不随会话清空 | —— | **无**（不持久、只影响观感） |
+| 9 | 一条工具变慢重建整窗 | 600 站：2072–2214 ms → 27–123 ms | **无计时断言**（见下） |
+
+#### 性能那条的完整对照
+
+同一会话、同一快照、只改一条**非最大值**工具的耗时（分母不变）：
+
+```
+旧签名 mix(maxToolMs); mix(toolMs)   2072  2062  2169  2214  ms
+新签名 mix(max(1, maxToolMs||toolMs)) 123    51    65    27  ms
+```
+
+卡片实际只用"有效分母"，却哈希了"全部工具耗时之和"——任何一条工具变化都让整窗失效。
+**为什么没加断言**：计时阈值在 CI 上不可靠；我试过用 DOM 节点身份判断（`first[i] === second[i]`），
+结果新旧两版都是全 `true`——React 会复用同一个 DOM 节点，**这个测法根本不测量重建次数**。
+查了一个自己写的假检查，和 §13.79 那次的教训是同一条。
+
+#### 没修的（都复现了，都记录在案）
+
+来自无障碍审查，按"会不会影响你"排序：
+
+1. **跟随已开启时，流式新站仍可能停在视口外。** `aria-pressed=true`、站数 13→14、选中索引不变、
+   `scrollLeft` 不动，右边缘超出 268 px。
+2. **搜索翻页后命中序号与选中记录错位。** prepend 一条更早的命中后计数从 2/2 变 2/3，
+   下一次 Enter 还停在原记录，只把计数改成 3/3。
+3. **重挂载后首次 prepend 丢选中记录。** 手动选中的面板能按 ID 迁移，重挂载过的不能——
+   `prevRevealedRef` 用恢复出来的数字初始化，首次 effect 因数字相同直接退出。
+4. **`End` 在站卡上是"选末站"，在面板根上是"回总览"。** README 没写这个区别。
+5. **面板根获得焦点时没有焦点环**（`:focus-visible=true` 但 `outline-style:none`）；
+   `.dstv_panelToggle` 的无障碍名称是 `⤢`。
+6. **inspect 联动传原始 callId 定位不到**（`viewRequest.focus: "c1"` 提示"锚点格式无法识别"）。
+7. **消息列表在步骤详情页就重建了**（`useMemo` 依赖请求序号，选择变化即预重建）。
+
+这七条都不是"不知道"，而是"这一轮没改"：前三条改的是状态机（跟随/翻页/重挂载三者互相牵连，
+必须一起想清楚），后四条是文案与样式。记在这里比悄悄留着强。
+
+#### 审查方法本身学到的
+
+- **同一个 bug 会被不同审查员独立发现**（搜索淡化被 Codex 和我同时抓到）——这提高可信度，
+  但不等于覆盖完整：两条 Codex 报告都提到"真实 DSH 里未实测"。
+- **自己的检查也会骗自己**：DOM 身份法测不出重建（见上）；`probe.js` 里那条"可访问名称"
+  对所有 `<input>` 永久豁免，永远不会失败（测试审查员发现，本轮未改）。
+- **一条探针在 Codex 的浏览器里红过一次**（`expanding did not make the panel taller`），
+  在我这里是绿的。环境差异，记下来但没当回归。

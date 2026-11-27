@@ -1662,6 +1662,75 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── ORDER1: a page that starts on a tool RESULT must not invert the timeline ──
+	// Paging can cut the window exactly between a tool-call and its result, so the first
+	// node is a result whose call is above the window. Its seat came from a seq binary
+	// search that falls back to the LAST-created turn when the event precedes every turn
+	// boundary — and `ensureTurn` then lowered that turn's seq to the event's, so sorting
+	// put the NEWEST turn first: 68 → 65 → 66 → 67, plus ~1h52m of fake rewind in the gap
+	// bars, plus the export filing the result under the wrong turn.
+	{
+		const snap = { eventNodes: [
+			{ kind: "tool-result", seq: 10, time: 1700000001000, turn: 1, callId: "c-absent", name: "bash", content: [{ type: "text", text: "ORPHAN" }] },
+			{ kind: "assistant", seq: 11, time: 1700000002000, turn: 1, step: 2, messageId: "m1", blocks: [{ kind: "text", text: "one" }] },
+			{ kind: "user", seq: 15, time: 1700000003000, turn: 2, content: [{ type: "text", text: "q2" }] },
+			{ kind: "assistant", seq: 16, time: 1700000004000, turn: 2, step: 1, messageId: "m2", blocks: [{ kind: "text", text: "two" }] }
+		], requests: [], callSchemas: {}, runningCalls: [], partial: null };
+		const tree = deriveTraceTree(snap, t);
+		const kinds = tree.stations.map((x) => x.kind);
+		if (kinds[0] !== "orphan-tool") throw new Error("ORDER1 the orphan tool result vanished from the window start: " + JSON.stringify(kinds));
+		// The turn ORDER must follow the real turn numbers. Compare each station's turn
+		// against the previous one: it may stay equal or grow, never shrink.
+		let prev = null;
+		for (const st of tree.stations) {
+			if (!Number.isFinite(st.turn)) continue;
+			if (prev !== null && st.turn < prev) {
+				throw new Error("ORDER1 the timeline went backwards: turn " + st.turn + " after turn " + prev +
+					" in " + JSON.stringify(tree.stations.map((x) => x.kind + "@" + x.turn)));
+			}
+			prev = st.turn;
+		}
+		// The orphan sits under ITS OWN turn's heading, and the turn headings keep their
+		// numeric order. (`tag` is the rendered heading; the orphan station itself carries no
+		// `turn` field, so the heading is the observable seat.)
+		const tags = tree.stations.filter((x) => x.tag !== void 0).map((x) => String(x.tag));
+		if (tags.length !== 2) throw new Error("ORDER1 expected two turn headings, got " + JSON.stringify(tags));
+		const turnOf = (tag) => { const m = /(\d+)\s*$/.exec(tag); return m === null ? NaN : Number(m[1]); };
+		if (turnOf(tags[0]) !== 1 || turnOf(tags[1]) !== 2) {
+			throw new Error("ORDER1 the turn headings came out as " + JSON.stringify(tags) + " (expected turn 1 then turn 2)");
+		}
+		if (tree.stations[0].tag === void 0) throw new Error("ORDER1 the orphan is not under any turn heading");
+	}
+
+	// ── EXPORT2: free text must not re-section the exported Markdown ─────────
+	// EXPORT1 covered `cell.text` and a fence. Six OTHER sites pushed free text raw:
+	// the compaction summary and its output, an error message, a retry message, a slash
+	// command's name/args, and a command outcome. Model or tool text containing
+	// `</details>`, ``` or a line starting with `#` broke the structure of the saved file
+	// — the panel never showed those sections, the export invented them.
+	{
+		const evil = "前文</details>\n\n```js\nconst x = 1;\n```\n\n### FORGED";
+		const snap = { eventNodes: [
+			{ kind: "user", seq: 1, time: 1700000000000, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "compaction", seq: 2, time: 1700000001000, turn: 1, step: 1, summary: evil, count: 3 },
+			{ kind: "error", seq: 3, time: 1700000002000, turn: 1, step: 2, message: evil },
+			{ kind: "command", seq: 4, time: 1700000003000, turn: 1, step: 3, name: "run\n### FORGED", args: "a\n### FORGED", outcomeText: evil },
+			{ kind: "assistant", seq: 5, time: 1700000004000, turn: 2, step: 1, messageId: "m", blocks: [{ kind: "text", text: "done" }] }
+		], requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		const tree = deriveTraceTree(snap, t);
+		const md = buildTraceMarkdown(tree, t);
+		// The export's own headings are the only ones allowed to start a line.
+		const ownTopic = (md.match(/^## /gm) ?? []).length;
+		const forged = (md.match(/^### FORGED/gm) ?? []).length;
+		if (forged > 0) throw new Error("EXPORT2 content forged " + forged + " heading line(s) in the export");
+		if (md.includes("\n</details>")) throw new Error("EXPORT2 content closed the export's <details> block");
+		// The export opens its own <details> for compaction output; a bare ``` from content
+		// would swallow everything after it, so assert the fence only ever appears escaped.
+		if (/(^|\n)```/.test(md)) throw new Error("EXPORT2 content opened a bare fence in the export");
+		if (!md.includes("前文")) throw new Error("EXPORT2 the escaped text vanished instead of being escaped");
+		if (ownTopic === 0) throw new Error("EXPORT2 the export lost its own headings");
+	}
+
 	// ── PACK1: README assets and runtime sources must ship in the tarball ─────
 	// `README.md` embeds screenshot/overview.jpg but `files` did not list it, so the
 	// published README rendered a broken image.

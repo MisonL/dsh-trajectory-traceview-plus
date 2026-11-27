@@ -284,8 +284,14 @@
 			// Searching dims the non-matches. Driven from the listbox so a keystroke does not
 			// rewrite every station element (§13.72): reached = not [data-dim], matched =
 			// [data-match]. Same visual result, one attribute instead of N.
-			".dstv_listbox[data-searching=true] .dstv_station:not([data-dim=true]):not([data-match=true]) .dstv_hcard{opacity:.5;filter:saturate(.3)}",
-			".dstv_listbox[data-searching=true] .dstv_station:not([data-dim=true]):not([data-match=true]) .dstv_hDot{opacity:.35}",
+			// `.dstv_listbox` does not exist: the element carrying `data-searching` is the
+			// horizontally-scrolling flex row, whose class is `.dstv_hflow`. The rule matched
+			// nothing, so typing a query left every non-matching card at full opacity while
+			// the MINIMAP dimmed correctly (its selector uses `.dstv_minimap`, which is real).
+			// Measured after the move to a container attribute: card opacity 1 / filter none
+			// with `data-searching="true"` on the listbox, tick opacity .25.
+			".dstv_hflow[data-searching=true] .dstv_station:not([data-dim=true]):not([data-match=true]) .dstv_hcard{opacity:.5;filter:saturate(.3)}",
+			".dstv_hflow[data-searching=true] .dstv_station:not([data-dim=true]):not([data-match=true]) .dstv_hDot{opacity:.35}",
 			".dstv_miniTick[data-match=true]{box-shadow:0 0 0 1.5px var(--dstv-warn);height:14px}",
 			// While searching, fade the ticks that did not match. Reached-only ticks fade via
 			// [data-dim]; the search fade lives here so it costs no per-tick attribute (§13.72).

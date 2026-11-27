@@ -73,12 +73,19 @@ const extraAssertions = [...browserCheck.matchAll(/(?:parsed\.)?failures\.push\(
 const truth = {
 	ciGates, localSteps, groups: observedGroups.size, assertions,
 	extraGroups: extraGroupNames.size, extraAssertions,
+	// The `--shots` line ends with a TOTAL ("共 36 组" / "(36 total)"), not the extra.
+	// It was not a claim at all until now, so it drifted silently while the line's other
+	// numbers were gated: the English copy read "(30 total)" for six releases after the
+	// base grew past it. A number written down twice goes stale (§13.37) — including the
+	// one that is a SUM of two numbers the same file already checks.
+	shotsTotalGroups: observedGroups.size + extraGroupNames.size,
 };
 
 if (process.argv.includes('--print')) {
 	console.log('CI 门禁 ' + ciGates + ' 项（workflow 具名步骤 ' + namedSteps.length + ' − Install）');
 	console.log('npm run check ' + localSteps + ' 步');
 	console.log('probe.js 观测组 ' + truth.groups + ' 个 / 断言 ' + assertions + ' 条');
+	console.log('--shots 合计 ' + truth.shotsTotalGroups + ' 组（基础 ' + truth.groups + ' + 额外 ' + truth.extraGroups + '）');
 	console.log('browser-check 额外 ' + truth.extraGroups + ' 组 / ' + truth.extraAssertions + ' 条断言'
 		+ (extraGroupNames.size > 0 ? '（组：' + [...extraGroupNames].join(', ') + '）' : ''));
 	process.exit(0);
@@ -91,7 +98,7 @@ if (process.argv.includes('--print')) {
 // it looked for `N 项` — the audit was wrong, not the document. Anchoring on the
 // sentence is what made it correct.
 const problems = [];
-const counted = { ciGates: 0, localSteps: 0, groups: 0, assertions: 0, extraGroups: 0, extraAssertions: 0 };
+const counted = { ciGates: 0, localSteps: 0, groups: 0, assertions: 0, extraGroups: 0, extraAssertions: 0, shotsTotalGroups: 0 };
 
 const claim = (file, lineNo, kind, found, want) => {
 	counted[kind] += 1;
@@ -123,6 +130,10 @@ for (const file of ['README.md', 'README.en.md']) {
 		for (const m of line.matchAll(/--shots[^\n]{0,80}?另加\s*\d+\s*组\s*\/\s*(\d+)\s*条/g)) claimSpan(m, 'extraAssertions', Number(m[1]), truth.extraAssertions);
 		for (const m of line.matchAll(/--shots[^\n]{0,60}?(?:adds?|plus)\s*(\d+)\s*(?:more\s*)?group/g)) claimSpan(m, 'extraGroups', Number(m[1]), truth.extraGroups);
 		for (const m of line.matchAll(/--shots[^\n]{0,60}?adds?\s*\d+\s*more\s*group\s*\/\s*(\d+)\s*assertions?/g)) claimSpan(m, 'extraAssertions', Number(m[1]), truth.extraAssertions);
+		// The total at the end of the same line: "…（375px 溢出，共 36 组）" / "(36 total)".
+		// Scoped to the `--shots` line so an unrelated "共 N 组" elsewhere is not misread.
+		for (const m of line.matchAll(/--shots[^\n]{0,90}?共\s*(\d+)\s*组/g)) claimSpan(m, 'shotsTotalGroups', Number(m[1]), truth.shotsTotalGroups);
+		for (const m of line.matchAll(/--shots[^\n]{0,90}?\((\d+)\s*total\)/g)) claimSpan(m, 'shotsTotalGroups', Number(m[1]), truth.shotsTotalGroups);
 
 		// "CI：7 项门禁" / "the seven gates" / "门禁本身是 7 项" / "those 7 gates"
 		for (const m of line.matchAll(/(\d+)\s*项门禁/g)) if (!isClaimed(m.index)) claim(file, at, 'ciGates', Number(m[1]), ciGates);
