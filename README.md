@@ -280,8 +280,8 @@ npm test                   # 只跑 smoke
 **需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
 
 ```powershell
-node scripts/browser-check.mjs          # 起 harness，跑 269 条断言 / 记录 39 组观测
-node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 3 条断言（375px 溢出，共 40 组）
+node scripts/browser-check.mjs          # 起 harness，跑 272 条断言 / 记录 40 组观测
+node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 3 条断言（375px 溢出，共 41 组）
 ```
 
 它需要 `agent-browser`（Chrome via CDP）。**故意不进 CI**：把浏览器塞进 runner 的

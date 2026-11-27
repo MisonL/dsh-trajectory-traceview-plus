@@ -354,6 +354,27 @@
 		}
 	}
 
+	// 23f) a LIVE session switch (panel stays mounted) must reset cleanly.
+	// Z3 exists because this path hid a stale `setMatchPtr` for one release: the reset
+	// effect only runs when the conversation changes WHILE mounted, and the probe never
+	// did that. The ReferenceError was swallowed by React's boundary, so the symptom was
+	// not a crash but a half-finished reset.
+	{
+		const errBefore = (window.__errors || []).length;
+		window.__render({ sessionKey: "live-switch-2" });
+		await tick(400);
+		const stillMounted = document.querySelector(".dstv_root") !== null;
+		const selectedNow = [...document.querySelectorAll("[role=option]")]
+			.filter((o) => o.getAttribute("aria-selected") === "true").length;
+		const fresh = (window.__errors || []).slice(errBefore);
+		if (!stillMounted) fail("a live session switch unmounted the panel");
+		else if (fresh.length > 0) fail("a live session switch threw: " + String(fresh[0]).slice(0, 160));
+		else if (selectedNow !== 0) fail("a live session switch kept " + selectedNow + " station(s) selected instead of returning to the overview");
+		info.liveSwitch = { errors: fresh.length, selected: selectedNow };
+		window.__render({ sessionKey: "s" });
+		await tick(300);
+	}
+
 	// 23e) is deliberately ABSENT. The reported "remount → first page load keeps the index,
 	// not the station" could NOT be exercised here: `window.__remount()` in the fixture does
 	// not restore `revealed` from sessionStorage (measured: a selection at "6 / 10 用户 T6"
