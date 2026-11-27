@@ -1662,6 +1662,44 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── HOSTILE1: one unprintable field must not take the whole view down ────
+	// `stepOf` called `Number(v)` on whatever the node carried. `{toString: null}` has no
+	// primitive conversion, so `Number` THREW while seating the assistant node and the
+	// browser replaced the entire panel with a boundary card (measured: stations 0,
+	// "Cannot convert object to primitive value"). A bad number must cost one label.
+	{
+		const bad = { toString: null };
+		const fields = ["step", "turn", "seq", "time", "messageId", "label"];
+		for (const field of fields) {
+			const node = { kind: "assistant", seq: 2, time: 1700000001000, turn: 1, step: 1, messageId: "m", blocks: [{ kind: "text", text: "ok" }] };
+			node[field] = bad;
+			const snap = { eventNodes: [
+				{ kind: "user", seq: 1, time: 1700000000000, turn: 1, content: [{ type: "text", text: "q" }] },
+				node
+			], requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+			let tree;
+			try { tree = deriveTraceTree(snap, t); }
+			catch (e) { throw new Error("HOSTILE1 an unprintable `" + field + "` threw out of the fold: " + e.message); }
+			if (tree.stations.length < 2) throw new Error("HOSTILE1 `" + field + "` dropped stations: " + tree.stations.length);
+			try { buildTraceMarkdown(tree, t); }
+			catch (e) { throw new Error("HOSTILE1 an unprintable `" + field + "` threw out of the export: " + e.message); }
+		}
+	}
+
+	// ── HOSTILE2: a tilde fence must not swallow the rest of the export ──────
+	// GFM fences with ``` and with ~~~. Only backticks were escaped, so prose ending in an
+	// unclosed "~~~" turned every following station into code in the saved file.
+	{
+		const snap = { eventNodes: [
+			{ kind: "user", seq: 1, time: 1700000000000, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "assistant", seq: 2, time: 1700000001000, turn: 1, step: 1, messageId: "m", blocks: [{ kind: "text", text: "before\n~~~\nunclosed tilde fence" }] },
+			{ kind: "assistant", seq: 3, time: 1700000002000, turn: 1, step: 2, messageId: "m2", blocks: [{ kind: "text", text: "AFTER-FENCE" }] }
+		], requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		const md = buildTraceMarkdown(deriveTraceTree(snap, t), t);
+		if (/(^|\n)~~~/.test(md)) throw new Error("HOSTILE2 a tilde fence from content survived into the export");
+		if (!md.includes("AFTER-FENCE")) throw new Error("HOSTILE2 the station after the fence vanished from the export");
+	}
+
 	// ── ORDER1: a page that starts on a tool RESULT must not invert the timeline ──
 	// Paging can cut the window exactly between a tool-call and its result, so the first
 	// node is a result whose call is above the window. Its seat came from a seq binary
