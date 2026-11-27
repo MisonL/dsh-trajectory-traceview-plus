@@ -10521,3 +10521,49 @@ window.__setLocaleInPlace = function (lang) {
    作用域清缓存（被签名里的翻译字段掩盖）。两者都删得掉而测试全绿。
 3. **真机验证**：这个面板从来没有在**真实的 DSH 会话**里打开过，只有 harness。
    `browser-check` 覆盖的是行为，不是"在宿主里能挂载"这件事本身。
+
+### 13.80 发布之后发现：本机 DSH 跑的还是 0.11.3（2026-11-27）
+
+#### 现象
+
+发完 `0.11.5`，顺手查了一下本机真实 profile：
+
+```
+~/.dsh/profiles/web/package.json
+  "dsh-trajectory-traceview-plus": "file:/Volumes/Work/code/dsh-trajectory-traceview-plus"
+
+~/.dsh/profiles/web/node_modules/dsh-trajectory-traceview-plus/
+  实体拷贝（不是 symlink），日期 Nov 25 12:36，版本 0.11.3
+```
+
+**`file:` 依赖不是软链，是 pnpm 打的一份实体拷贝。** 仓库早就 0.11.5 了，profile 里那份还是
+11 月 25 日的 0.11.3——所以这台机器上肉眼看到的「轨迹」页签，跑的是**这批改动之前**的代码。
+
+这条比任何一处代码问题都重要：**我所有的"已验证"，验证的是仓库和 harness，不是用户面前
+那个面板。**
+
+#### 怎么确认的
+
+1. `dsh --profile verify --dump-config` 里能看到插件条目 → 安装路径正确
+2. 在**临时 profile**（`DSH_HOME=/tmp/...`）里装 `file:` → 解析到 0.11.5，说明命令本身没问题
+3. 但真实 web profile 里的拷贝时间戳停在 11 月 25 日 → 从来没刷新过
+
+#### 更新的命令
+
+```bash
+dsh plugin --profile web add file:/Volumes/Work/code/dsh-trajectory-traceview-plus
+# 然后重启 dsh web —— 插件模块是启动时加载的
+```
+
+临时 profile 里验证过这条命令：`- dsh-trajectory-traceview-plus 0.11.5` → `+ file:…/dsh-trajectory-traceview-plus`，
+解析到 0.11.5，退出 0。
+
+#### 教训
+
+1. **"发布成功" ≠ "用户看到的是新版"。** 发布链路的四个环节（tag / Release / registry /
+   tarball）全绿，和本机实际加载的代码是两件事。`file:` 依赖尤其容易骗人——它长得像
+   "总是最新"，实际是一份快照。
+2. **验证的目标要写清楚。** `browser-check` 验证的是**组件行为**；真机验证要验证的是
+   **宿主导入的是哪份文件**。这两件事没有任何重叠，所以"探针全绿"不能替代后者。
+3. **查一件事的时候顺手查它的邻居。** 本来只想看真实 profile 有没有装插件，结果发现装的是
+   旧版本——如果只在临时 profile 里验证，这个结论会一直是错的。
