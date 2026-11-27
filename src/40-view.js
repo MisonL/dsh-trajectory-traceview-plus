@@ -2009,7 +2009,7 @@
 								] }, `dr${cell.id}`) : null,
 								cell.resultText === "" && !cell.isError && !cell.running ? jsx("span", { className: "dstv_dLabel sec", children: t("detail.noResult") }, "tNoRes") : null,
 								cell.subCalls.length > 0 ? jsxs("details", { className: "dstv_det", open: cell.subCalls.some((sub) => sub.isError), children: [
-									jsx("summary", { children: [`${t("detail.subCalls")} (${cell.subCalls.length})`, cell.subCalls.some((sub) => sub.isError) ? jsx("span", { className: "dstv_chip err", children: t("chip.error") }, "tSubErr") : null] }, "tSubSum"),
+									jsx("summary", { children: [`${t("detail.subCalls")} (${cell.subCalls.length})${cell.subCallsTruncated === true && Number.isSafeInteger(cell.subCallsTotal) ? ` · ${t("detail.subCallsCut").replace("{shown}", String(cell.subCalls.length)).replace("{total}", String(cell.subCallsTotal))}` : ""}`, cell.subCalls.some((sub) => sub.isError) ? jsx("span", { className: "dstv_chip err", children: t("chip.error") }, "tSubErr") : null] }, "tSubSum"),
 									jsx("div", {
 										className: "inner",
 										children: renderSubCalls(cell.subCalls, 0)
@@ -2334,7 +2334,18 @@
 								okLabel: t("anchor.copied"),
 								failLabel: t("anchor.copyFailed")
 							}, "dExportStep"),
-							jsx("button", { type: "button", className: "dstv_btn dstv_panelToggle", title: panelFull ? t("action.collapsePanel") : t("action.expandPanel"), onClick: () => setPanelFull((v) => !v), children: panelFull ? "⤡" : "⤢" }, "dToggle")
+							jsx("button", {
+								type: "button",
+								className: "dstv_btn dstv_panelToggle",
+								title: panelFull ? t("action.collapsePanel") : t("action.expandPanel"),
+								// A glyph is not a name. Chromium's AX tree announced this control as
+								// "button, ⤢" — the arrow is a picture, and a screen reader user had
+								// to guess what it does. The title alone is a tooltip, not a name.
+								"aria-label": panelFull ? t("action.collapsePanel") : t("action.expandPanel"),
+								"aria-expanded": panelFull ? "true" : "false",
+								onClick: () => setPanelFull((v) => !v),
+								children: panelFull ? "⤡" : "⤢"
+							}, "dToggle")
 						]
 					}, "dHead"),
 					// The key must include WHAT is being rendered, not just where. An error

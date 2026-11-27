@@ -1085,6 +1085,36 @@
 		await tick(300);
 	}
 
+	// 23b) the panel root must SHOW focus, and the glyph-only toggle must have a name.
+	// A real Tab landed on `.dstv_root` with `:focus-visible=true` and `outline-style:none`
+	// — the shortcut-owning element was the one place a keyboard user could not see focus.
+	// The expand/collapse button announced itself as "button, ⤢": a glyph is not a name.
+	{
+		const rootEl = document.querySelector(".dstv_root");
+		if (rootEl === null) fail("no panel root to focus");
+		else {
+			rootEl.focus();
+			await tick(200);
+			const style = getComputedStyle(rootEl);
+			if (style.outlineStyle === "none" || style.outlineWidth === "0px") {
+				fail("the focused panel root has no visible outline (style " + style.outlineStyle + ", width " + style.outlineWidth + ")");
+			}
+			const toggle = document.querySelector(".dstv_panelToggle");
+			if (toggle === null) fail("the expand/collapse button is missing");
+			else {
+				const name = (toggle.getAttribute("aria-label") || "").trim();
+				if (name === "") fail("the expand button has no accessible name (its text is " + JSON.stringify((toggle.textContent || "").trim()) + ")");
+				if (toggle.getAttribute("aria-expanded") === null) fail("the expand button does not expose aria-expanded");
+				const before = toggle.getAttribute("aria-expanded");
+				toggle.click();
+				await tick(250);
+				if (toggle.getAttribute("aria-expanded") === before) fail("aria-expanded did not change after expanding the panel");
+				toggle.click();
+				await tick(250);
+			}
+		}
+	}
+
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
 	// invisible while the single-step copy AND the whole-trace export printed the whole

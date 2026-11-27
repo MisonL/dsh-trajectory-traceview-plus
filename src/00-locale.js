@@ -82,6 +82,9 @@
 			"detail.args": "调用参数",
 			"detail.noArgs": "（无参数）",
 			"detail.subCalls": "子调用",
+			// The budget silently dropped the tail: 20,000 children rendered 1,999 with no
+			// indication anywhere. Say how many exist when the list was cut.
+			"detail.subCallsCut": "只显示前 {shown} 个（共 {total} 个）",
 			"detail.position": "站点",
 			"detail.result": "工具结果",
 			"detail.noResult": "（无结果内容）",
@@ -264,6 +267,7 @@
 			"detail.args": "Call arguments",
 			"detail.noArgs": "(no arguments)",
 			"detail.subCalls": "Sub-calls",
+			"detail.subCallsCut": "showing the first {shown} of {total}",
 			"detail.position": "Station",
 			"detail.result": "Tool result",
 			"detail.noResult": "(no result content)",

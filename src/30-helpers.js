@@ -271,14 +271,17 @@
 		 * though the cap was 2,000. The cap is per tool cell, not per root.
 		 */
 		function mapSubCalls(list, tr) {
-			if (!Array.isArray(list)) return [];
+			if (!Array.isArray(list)) return { list: [], total: 0, truncated: false };
 			const budget = { used: 0 };
 			const out = [];
 			for (const sub of list) {
 				if (budget.used >= SUB_CALL_MAX_TOTAL) break;
 				out.push(subDetailOf(sub, 0, budget, tr));
 			}
-			return out;
+			// The budget silently dropped the tail: a parent with 20,000 children rendered
+			// 1,999 and NOTHING anywhere said so — not the panel, not the export. Reporting
+			// it is the difference between "this is all there was" and "this is all that fit".
+			return { list: out, total: list.length, truncated: budget.used >= SUB_CALL_MAX_TOTAL };
 		}
 		/** Map one sub-call entry (settled ToolResultNode or running shape) to full detail. */
 		function subDetailOf(sub, depth, budget, tr) {
@@ -1327,6 +1330,7 @@
 							st.toolMs += dur ?? 0;
 							st.toolCount += 1;
 							if (res?.isError === true) st.hasError = true;
+							const subPack1 = mapSubCalls(res?.subCalls, t);
 							st.cells.push({
 								id: cellId("t", b.callId, st.cells.length),
 								kind: "tool",
@@ -1338,7 +1342,9 @@
 								errorName: res?.error?.name,
 								durationMs: dur,
 								running: isRunning,
-								subCalls: mapSubCalls(res?.subCalls, t),
+								subCalls: subPack1.list,
+								subCallsTotal: subPack1.total,
+								subCallsTruncated: subPack1.truncated,
 								schema: schema != null ? { name: schema.name, description: schema.description, parameters: schema.parameters } : null
 							});
 						}
@@ -1413,13 +1419,16 @@
 				st.live = true;
 				st.toolCount += 1;
 				const schema = schemasById.get(c.callId);
+				const subPack2 = mapSubCalls(c.subCalls, t);
 				st.cells.push({
 					id: cellId("t", c.callId, st.cells.length), kind: "tool", callId: c.callId,
 					name: typeof c.name === "string" && c.name !== "" ? c.name : t("node.tool"),
 					args: argsText(c.argsRaw),
 					resultText: "", isError: false, errorName: void 0, durationMs: null,
 					running: true,
-					subCalls: mapSubCalls(c.subCalls, t),
+					subCalls: subPack2.list,
+					subCallsTotal: subPack2.total,
+					subCallsTruncated: subPack2.truncated,
 					schema: schema != null ? { name: schema.name, description: schema.description, parameters: schema.parameters } : null
 				});
 			}
@@ -1503,6 +1512,7 @@
 						st.toolCount += 1;
 						if (res?.isError === true) st.hasError = true;
 						const schema = schemasById.get(b.callId);
+						const subPack3 = mapSubCalls(res?.subCalls, t);
 						st.cells.push({
 							id: cellId("t", b.callId, st.cells.length), kind: "tool", callId: b.callId,
 							name: typeof b.name === "string" && b.name !== "" ? b.name : t("node.tool"),
@@ -1511,7 +1521,9 @@
 							isError: res?.isError === true,
 							errorName: res?.error?.name,
 							durationMs: null, running: res === undefined,
-							subCalls: mapSubCalls(res?.subCalls, t),
+							subCalls: subPack3.list,
+							subCallsTotal: subPack3.total,
+							subCallsTruncated: subPack3.truncated,
 							schema: schema != null ? { name: schema.name, description: schema.description, parameters: schema.parameters } : null
 						});
 					}
@@ -1685,7 +1697,8 @@
 				for (const n of orphans) {
 					const e = turnForSeq(n.seq, n.turn);
 					const text = blocksText(n.content, t);
-					const subCalls = mapSubCalls(n.subCalls, t);
+					const subCallPack = mapSubCalls(n.subCalls, t);
+					const subCalls = subCallPack.list;
 					// Anchor issuance is centralized in the "special stations" branch below
 					// (it re-checks `seq` for integer-ness and stamps anchorKey/synthetic).
 					e.stations.push({
@@ -1712,6 +1725,8 @@
 						displayText: text !== "" ? text : (n.error?.code ?? n.error?.name ?? ""),
 						isError: n.isError === true,
 						subCalls,
+						subCallsTotal: subCallPack.total,
+						subCallsTruncated: subCallPack.truncated,
 						hasError: n.isError === true
 					});
 				}
@@ -2244,6 +2259,16 @@
 						// again here duplicated every sub-call result in the export.
 						pushSubLines(L, sub, 1, t);
 					}
+					// Say it when the list was cut. A file that silently stops at 1,999 of
+					// 20,000 reads as "this was everything", which is the one outcome this
+					// view promises never to produce.
+					if (cell.subCallsTruncated === true && Number.isSafeInteger(cell.subCallsTotal)) {
+						const shown = (cell.subCalls ?? []).length;
+						L.push("");
+						L.push(`> ${typeof t === "function"
+							? t("detail.subCallsCut").replace("{shown}", fmtInt(shown)).replace("{total}", fmtInt(cell.subCallsTotal))
+							: `showing the first ${String(shown)} of ${String(cell.subCallsTotal)}`}`);
+					}
 					L.push("");
 				}
 			}
@@ -2657,6 +2682,10 @@
 								L.push("");
 								pushSubLines(L, sub, 1, t);
 							}
+							if (cell.subCallsTruncated === true && Number.isSafeInteger(cell.subCallsTotal)) {
+								L.push("");
+								L.push(`> ${t("detail.subCallsCut").replace("{shown}", fmtInt(cell.subCalls.length)).replace("{total}", fmtInt(cell.subCallsTotal))}`);
+							}
 						}
 					}
 				} else if (st.kind === "orphan-tool") {
@@ -2665,6 +2694,10 @@
 					L.push(`_${t("orphan.badge")} · ${anchorOf(st) ?? "—"}_`);
 					if (st.args !== "") { L.push(""); L.push(...fencedBlock(prettyArgs(st.args) || st.args, "json")); }
 					if (st.displayText !== "") { L.push(""); L.push(...fencedBlock(st.displayText.length > 4000 ? `${st.displayText.slice(0, 4000)}\n…(${fmtInt(st.displayText.length)} ${t("detail.chars")})` : st.displayText)); }
+					if (st.subCallsTruncated === true && Number.isSafeInteger(st.subCallsTotal)) {
+						L.push("");
+						L.push(`> ${t("detail.subCallsCut").replace("{shown}", fmtInt((st.subCalls || []).length)).replace("{total}", fmtInt(st.subCallsTotal))}`);
+					}
 				} else if (st.kind === "compaction") {
 					L.push(`### ♺ ${st.label}${Number.isSafeInteger(st.count) ? ` _(${numOr(st.count)} ${t("meta.steps")} / ${fmtTokens(st.tokens)} ${t("meta.tokens")})_` : ""}`);
 					if (st.summary !== "") { L.push(""); L.push(proseSafe(st.summary)); }

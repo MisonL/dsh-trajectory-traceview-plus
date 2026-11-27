@@ -1662,6 +1662,29 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── SUBCUT1: a truncated sub-call list must say so, on both surfaces ─────
+	// The 2,000-node budget dropped the tail silently: a parent with 20,000 children
+	// rendered 1,999 and neither the panel nor the export mentioned it. A file that stops
+	// without saying so reads as "this was everything".
+	{
+		const kids = [];
+		for (let i = 0; i < 5000; i += 1) kids.push({ callId: "k" + i, name: "kid-" + i, argsRaw: "{}", resultText: "r" });
+		const snap = { eventNodes: [
+			{ kind: "user", seq: 1, time: 1000, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "assistant", seq: 2, time: 2000, turn: 1, step: 1, messageId: "m", blocks: [{ kind: "tool-call", callId: "c1", name: "parent", argsRaw: "{}" }] },
+			{ kind: "tool-result", seq: 3, time: 3000, turn: 1, step: 1, callId: "c1", callTime: 2000, name: "parent", content: [{ type: "text", text: "ok" }], subCalls: kids }
+		], requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		const tree = deriveTraceTree(snap, t);
+		const cell = tree.stations.find((st) => Array.isArray(st.cells) && st.cells.some((c) => c.kind === "tool")).cells.find((c) => c.kind === "tool");
+		if (cell.subCalls.length !== 2000) throw new Error("SUBCUT1 the budget changed: mapped " + cell.subCalls.length + " of 5000");
+		if (cell.subCallsTotal !== 5000) throw new Error("SUBCUT1 the total was lost: " + cell.subCallsTotal);
+		if (cell.subCallsTruncated !== true) throw new Error("SUBCUT1 truncation not reported on the cell");
+		if (!buildTraceMarkdown(tree, t).includes("detail.subCallsCut")) throw new Error("SUBCUT1 the full export does not mention the cut");
+		if (!buildStepMarkdown(tree.stations.find((st) => Array.isArray(st.cells) && st.cells.some((c) => c.kind === "tool")), [], false, t).includes("detail.subCallsCut")) {
+			throw new Error("SUBCUT1 the single-step export does not mention the cut");
+		}
+	}
+
 	// ── PAIR1: an id-less result must not jump turns ─────────────────────────
 	// With `callId` omitted, EVERY id-less result lands in one bucket. "First unconsumed"
 	// then handed turn 2's output to turn 1's call, silently: the panel showed CALL_A with

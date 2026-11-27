@@ -258,7 +258,7 @@ The tests run the helper region against mock snapshots covering: tree building /
 **What needs a real browser** (`react-dom/server` cannot see scroll, focus, clipboard, intervals or layout):
 
 ```powershell
-node scripts/browser-check.mjs          # builds the harness; 251 assertions over 37 recorded groups
+node scripts/browser-check.mjs          # builds the harness; 257 assertions over 37 recorded groups
 node scripts/browser-check.mjs --shots  # saves screenshots and adds 1 more group / 4 assertions: 375px overflow (38 total)
 ```
 

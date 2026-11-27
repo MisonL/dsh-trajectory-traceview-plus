@@ -242,6 +242,11 @@
 			// surface one consistent, high-contrast focus indicator (WCAG 2.4.7/2.4.11).
 			".dstv_root button:focus-visible,.dstv_root summary:focus-visible,.dstv_root a:focus-visible,.dstv_root input:focus-visible{outline:2px solid var(--dstv-info);outline-offset:2px;border-radius:6px}",
 			// Suppress the ring only for pointer users, never for keyboard users.
+			// The panel root is focusable (it owns the keyboard shortcuts), and it had NO focus
+			// ring: real Tab put focus on `.dstv_root` with `:focus-visible=true` and
+			// `outline-style:none`, so a keyboard user could not see where they were. Inset so
+			// the ring is not clipped by the panel's own overflow.
+			".dstv_root:focus-visible{outline:2px solid var(--dstv-info);outline-offset:-2px}",
 			".dstv_root:focus:not(:focus-visible){outline:none}",
 			".dstv_station:focus:not(:focus-visible){outline:none}",
 			".dstv_search:focus-within{border-color:var(--dstv-info);box-shadow:0 0 0 2px color-mix(in srgb,var(--dstv-info) 18%,transparent)}",
