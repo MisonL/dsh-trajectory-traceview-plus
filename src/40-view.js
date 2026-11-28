@@ -1629,8 +1629,16 @@
 								className: "dstv_name",
 								children: [
 									jsx("span", { className: s.isError ? "dstv_bad" : "dstv_ok", children: s.isError ? "✗" : "⤷" }, "oIcon"),
-									`${t("node.orphanTool")} · ${s.name}`,
-									jsx("span", { className: "dstv_chips", children: [jsx("span", { className: "dstv_chip info", children: t("orphan.badge") }, "oBadge")] }, "oChips")
+									// A compaction REPLAY is a different thing from "the call is outside
+									// the window": the call is right there and was already answered.
+									// Saying the call is missing sends the reader looking for a bug.
+									`${t(s.replayOf !== null && s.replayOf !== void 0 ? "node.replayedTool" : "node.orphanTool")} · ${s.name}`,
+									jsx("span", {
+										className: "dstv_chips",
+										children: [jsx("span", { className: "dstv_chip info", children: s.replayOf !== null && s.replayOf !== void 0
+											? t("orphan.replayBadge").replace("{seq}", String(s.replayOf))
+											: t("orphan.badge") }, "oBadge")]
+									}, "oChips")
 								]
 							}, "oName"),
 							s.args !== "" ? jsx("div", { className: "dstv_text dstv_clamp2 sec", title: cardTitle(s.args), children: cardText(s.args) }, "oArgs") : null,
@@ -1986,7 +1994,7 @@
 				if (s.kind === "orphan-tool") {
 					const body = s.displayText !== "" ? s.displayText : t("orphan.noText");
 					return jsxs("div", { className: "dstv_dBody", children: [
-						jsx("span", { className: "dstv_dLabel", children: `${t("node.orphanTool")} · ${s.name}` }, "oLbl"),
+						jsx("span", { className: "dstv_dLabel", children: `${t(s.replayOf !== null && s.replayOf !== void 0 ? "node.replayedTool" : "node.orphanTool")} · ${s.name}` }, "oLbl"),
 						jsx("div", { className: "dstv_dSection", children: [
 							jsx("span", { className: "dstv_chip info", children: t("orphan.badge") }, "oBadge"),
 							jsx("span", { className: "dstv_chip", children: `callId ${s.callId}` }, "oCid")

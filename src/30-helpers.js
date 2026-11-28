@@ -1121,6 +1121,18 @@
 			 * the call; fall back to the same turn, then to the legacy first-unconsumed so a
 			 * normal log behaves exactly as before.
 			 */
+			// Which result seq was already consumed for each callId. Compaction replays tool
+			// results (`tool/result` repeated under the SAME callId at a much later seq — measured
+			// 13 such groups in one 17k-event session). Without this the duplicate looked like
+			// "the call is outside the window", which is false: the call is right there and was
+			// already answered.
+			const consumedByCallId = new Map();
+			const reclaimResult = (key, seq) => {
+				if (key === void 0 || key === null) return;
+				const list = consumedByCallId.get(key);
+				if (list === void 0) consumedByCallId.set(key, [seq]);
+				else list.push(seq);
+			};
 			const takeResult = (callId, turn, afterSeq) => {
 				const list = resultsById.get(callId);
 				if (list === void 0) return void 0;
@@ -1137,13 +1149,14 @@
 					if (idless && !sameTurnMatch) continue;
 					if (sameTurnMatch && Number.isFinite(afterSeq) && Number.isFinite(r.seq) && r.seq > afterSeq) {
 						consumedResults.add(r);
+						reclaimResult(callId, r.seq);
 						return r;
 					}
 					if (sameTurnMatch && sameTurn === null) sameTurn = r;
 					if (legacy === null) legacy = r;
 				}
 				const pick = sameTurn ?? legacy;
-				if (pick !== null) consumedResults.add(pick);
+				if (pick !== null) { consumedResults.add(pick); reclaimResult(callId, pick.seq); }
 				return pick ?? void 0;
 			};
 
@@ -1772,6 +1785,12 @@
 						subCalls,
 						subCallsTotal: subCallPack.total,
 						subCallsTruncated: subCallPack.truncated,
+						// Set when this same callId ALREADY produced a result earlier in the window —
+						// i.e. this is a compaction replay, not a missing call.
+						replayOf: (() => {
+							const used = consumedByCallId.get(n.callId);
+							return used !== void 0 && used.length > 0 ? used[0] : null;
+						})(),
 						hasError: n.isError === true
 					});
 				}
@@ -2142,7 +2161,8 @@
 				: station.kind === "user" ? t("node.user")
 					: station.kind === "error" ? t("node.error")
 						: station.kind === "compaction" ? t("node.compaction")
-							: station.kind === "orphan-tool" ? t("node.orphanTool")
+							// Same distinction as the card: a compaction replay is not a missing call.
+							: station.kind === "orphan-tool" ? t(station.replayOf !== null && station.replayOf !== void 0 ? "node.replayedTool" : "node.orphanTool")
 								: station.kind === "unknown" ? t("node.unknown")
 									: String(station.kind);
 			const parts = [`${position} / ${total}`, kind];
@@ -2758,9 +2778,9 @@
 						}
 					}
 				} else if (st.kind === "orphan-tool") {
-					L.push(`### ⤷ ${t("node.orphanTool")} · ${st.name}`);
+					L.push(`### ⤷ ${t(st.replayOf !== null && st.replayOf !== void 0 ? "node.replayedTool" : "node.orphanTool")} · ${st.name}`);
 					L.push("");
-					L.push(`_${t("orphan.badge")} · ${anchorOf(st) ?? "—"}_`);
+					L.push(`_${t(st.replayOf !== null && st.replayOf !== void 0 ? "orphan.replayBadge" : "orphan.badge").replace("{seq}", String(st.replayOf ?? ""))} · ${anchorOf(st) ?? "—"}_`);
 					if (st.args !== "") { L.push(""); L.push(...fencedBlock(prettyArgs(st.args) || st.args, "json")); }
 					if (st.displayText !== "") { L.push(""); L.push(...fencedBlock(st.displayText.length > 4000 ? `${st.displayText.slice(0, 4000)}\n…(${fmtInt(st.displayText.length)} ${t("detail.chars")})` : st.displayText)); }
 					if (st.subCallsTruncated === true && Number.isSafeInteger(st.subCallsTotal)) {

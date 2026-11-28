@@ -1662,6 +1662,39 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── REPLAY1: a compaction replay is not an orphan ─────────────────────────
+	// DSH re-sends tool results after a compaction under the SAME callId at a much later
+	// seq (measured: 13 such groups in one 17k-event session). Those results have no call
+	// left to consume them, so they landed in the `orphan-tool` bucket and the card said
+	// "the call is outside the window" — which is false: the call is right there and was
+	// already answered. The projection now records `replayOf`, and only a result whose
+	// callId was NEVER consumed stays a plain orphan.
+	{
+		const treeReplay = deriveTraceTree({ eventNodes: [
+			{ kind: "user", seq: 1, time: 1000, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "assistant", seq: 2, time: 2000, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "tool-call", callId: "REPLAYED", name: "read", argsRaw: "{}" }] },
+			{ kind: "tool-result", seq: 3, time: 3000, turn: 1, step: 1, callId: "REPLAYED", name: "read", callTime: 2000, content: [{ type: "text", text: "FILE" }] },
+			{ kind: "user", seq: 50, time: 50000, turn: 2, content: [{ type: "text", text: "q2" }] },
+			{ kind: "tool-result", seq: 2085, time: 60000, turn: 2, step: 1, callId: "REPLAYED", name: "read", callTime: null, content: [{ type: "text", text: "FILE" }] },
+			{ kind: "tool-result", seq: 3000, time: 70000, turn: 3, step: 1, callId: "NEVER-SEEN", name: "x", callTime: null, content: [{ type: "text", text: "OTHER" }] }
+		], requests: [], callSchemas: {}, runningCalls: {}, partial: null }, t);
+		const orphansReplay = treeReplay.stations.filter((s) => s.kind === "orphan-tool");
+		if (orphansReplay.length !== 2) throw new Error("REPLAY1 expected 2 orphan-tool stations, got " + orphansReplay.length);
+		const replayed = orphansReplay.find((s) => s.seq === 2085);
+		const genuine = orphansReplay.find((s) => s.callId === "NEVER-SEEN");
+		if (replayed === void 0 || genuine === void 0) throw new Error("REPLAY1 the fixture produced the wrong orphans: " + JSON.stringify(orphansReplay.map((s) => [s.seq, s.callId])));
+		if (replayed.replayOf !== 3) throw new Error("REPLAY1 the replayed result must point at the original seq 3, got " + JSON.stringify(replayed.replayOf));
+		if (genuine.replayOf !== null) throw new Error("REPLAY1 a result whose callId was never consumed must NOT be marked as a replay: " + JSON.stringify(genuine.replayOf));
+		// The card must say which one it is (both surfaces, so a screen reader agrees).
+		// The smoke locale is the identity function, so these assert WHICH key the export
+		// reaches for — the zh/en wording is checked by the browser side (probe 23l).
+		const mdReplay = buildTraceMarkdown(treeReplay, t);
+		if (!/node\.replayedTool/.test(mdReplay)) throw new Error("REPLAY1 the export still calls the replay an orphan");
+		if (!/node\.orphanTool/.test(mdReplay)) throw new Error("REPLAY1 the export lost the genuine orphan");
+		if (!/orphan\.replayBadge/.test(mdReplay)) throw new Error("REPLAY1 the export does not carry the replay's original anchor");
+		if (!/orphan\.badge(?!\.)/.test(mdReplay)) throw new Error("REPLAY1 the export lost the genuine orphan's badge");
+	}
+
 	// ── ANCHOR1: an anchor copied from a tool result survives the header backfill ──
 	// Copy `tvp1:e19` from an orphan result, load one more page: seq 19 stops being its own
 	// station and becomes a cell of the step at 15. The anchor then said "not loaded" for an

@@ -286,7 +286,7 @@ npm test                   # 只跑 smoke
 **需要真实浏览器的部分**（`react-dom/server` 测不到滚动、焦点、剪贴板、定时器、响应式）：
 
 ```powershell
-node scripts/browser-check.mjs          # 起 harness，跑 301 条断言 / 记录 46 组观测
+node scripts/browser-check.mjs          # 起 harness，跑 305 条断言 / 记录 46 组观测
 node scripts/browser-check.mjs --shots  # 另存截图，并另加 1 组 / 3 条断言（375px 溢出，共 47 组）
 ```
 

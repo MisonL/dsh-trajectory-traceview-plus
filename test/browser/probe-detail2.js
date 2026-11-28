@@ -654,6 +654,36 @@
 		}
 	}
 
+	// 23l) the card must tell a compaction REPLAY apart from a missing call.
+	// Both used to read "调用不在窗口内". For a replay that is simply false, and it sends
+	// the reader hunting for a bug that is not there.
+	{
+		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		window.__store.set(Object.assign({ eventNodes: [
+			{ kind: "user", seq: 1, time: 1000, turn: 1, content: [{ type: "text", text: "问" }] },
+			{ kind: "assistant", seq: 2, time: 2000, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "tool-call", callId: "REPLAYED", name: "read", argsRaw: "{}" }] },
+			{ kind: "tool-result", seq: 3, time: 3000, turn: 1, step: 1, callId: "REPLAYED", name: "read", callTime: 2000, content: [{ type: "text", text: "FILE" }] },
+			{ kind: "user", seq: 50, time: 50000, turn: 2, content: [{ type: "text", text: "二" }] },
+			{ kind: "tool-result", seq: 2085, time: 60000, turn: 2, step: 1, callId: "REPLAYED", name: "read", callTime: null, content: [{ type: "text", text: "FILE" }] },
+			{ kind: "tool-result", seq: 3000, time: 70000, turn: 3, step: 1, callId: "NEVER-SEEN", name: "x", callTime: null, content: [{ type: "text", text: "OTHER" }] }
+		] }, base));
+		await tick(500);
+		const cards = [...document.querySelectorAll("[role=option]")];
+		const replayedCard = cards.find((o) => /压缩重放/.test(o.getAttribute("aria-label") || ""));
+		const genuineCard = cards.filter((o) => /孤立工具结果/.test(o.getAttribute("aria-label") || ""));
+		if (replayedCard === void 0) fail("the compaction replay is not labelled as a replay on screen (" + JSON.stringify(cards.map((o) => o.getAttribute("aria-label"))) + ")");
+		else if (genuineCard.length !== 1) fail("expected exactly one genuine orphan, found " + genuineCard.length);
+		else {
+			const replayChip = [...replayedCard.querySelectorAll(".dstv_chip")].map((c) => (c.textContent || "").trim()).join("|");
+			const genuineChip = [...genuineCard[0].querySelectorAll(".dstv_chip")].map((c) => (c.textContent || "").trim()).join("|");
+			if (!/相同/.test(replayChip)) fail("the replay card's chip does not point at the original result: " + JSON.stringify(replayChip));
+			if (!/不在窗口内/.test(genuineChip)) fail("the genuine orphan lost its 'outside the window' chip: " + JSON.stringify(genuineChip));
+			info.replay = { replayChip, genuineChip };
+		}
+		window.__store.set(Object.assign({ partial: null }, healthySnap));
+		await tick(250);
+	}
+
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
 	// invisible while the single-step copy AND the whole-trace export printed the whole
