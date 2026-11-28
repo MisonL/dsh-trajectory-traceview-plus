@@ -600,15 +600,23 @@
 			const stepPrev = () => {
 				setPlaying(false);
 				setFollow(false);
-				if (revealed === null) { if (N > 0) setRevealed(N); return; }
-				if (R > 1) setRevealed(R - 1);
+				// Functional update: held-down arrow keys arrive faster than React can re-render,
+				// and reading `revealed` from the closure merged those repeats into a single step.
+				// Measured: 20 synthetic presses in one tick advanced ONE station; with a 200 ms gap
+				// they advanced 20. Real key auto-repeat sits in between, so the updater form is the
+				// honest one.
+				setRevealed((r) => {
+					if (r === null) return N > 0 ? Math.min(N, Math.max(1, N)) : null;
+					return r > 1 ? r - 1 : r;
+				});
 			};
 			const stepNext = () => {
 				setPlaying(false);
 				setFollow(false);
-				if (revealed === null) { if (N > 0) setRevealed(1); return; }
-				if (R < N) setRevealed(R + 1);
-				else setRevealed(null);
+				setRevealed((r) => {
+					if (r === null) return N > 0 ? 1 : null;
+					return r < N ? r + 1 : null;
+				});
 			};
 			const toEnd = () => {
 				setPlaying(false);

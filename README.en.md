@@ -268,8 +268,8 @@ The tests run the helper region against mock snapshots covering: tree building /
 **What needs a real browser** (`react-dom/server` cannot see scroll, focus, clipboard, intervals or layout):
 
 ```powershell
-node scripts/browser-check.mjs          # builds the harness; 294 assertions over 44 recorded groups
-node scripts/browser-check.mjs --shots  # saves screenshots and adds 1 more group / 3 assertions: 375px overflow (45 total)
+node scripts/browser-check.mjs          # builds the harness; 296 assertions over 45 recorded groups
+node scripts/browser-check.mjs --shots  # saves screenshots and adds 1 more group / 3 assertions: 375px overflow (46 total)
 ```
 
 It needs `agent-browser` (Chrome via CDP). **Deliberately not in CI**: adding a browser to the runner is more moving parts than the check is worth, and a flaky browser job trains people to ignore red builds. Run it locally before releasing.

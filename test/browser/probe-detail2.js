@@ -571,6 +571,39 @@
 		}
 	}
 
+	// 23j) three presses of → inside one tick must advance three stations.
+	// The step functions read `revealed` from the render closure, so repeats that arrive
+	// before React re-renders all saw the SAME value and collapsed into one step. Real key
+	// auto-repeat sits on that boundary. They now use the functional form.
+	{
+		const mkA = (n) => {
+			const out = [];
+			for (let i = 1; i <= n; i += 1) out.push({ kind: "user", seq: i * 10, time: 1000 + i * 1000, turn: i, content: [{ type: "text", text: "A" + i }] });
+			return out;
+		};
+		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		window.__store.set(Object.assign({ eventNodes: mkA(10) }, base));
+		await tick(450);
+		const rootK = document.querySelector(".dstv_root");
+		const selIdx = () => [...document.querySelectorAll("[role=option]")].findIndex((o) => o.getAttribute("aria-selected") === "true");
+		rootK.focus();
+		rootK.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }));
+		await tick(250);
+		if (selIdx() !== 0) fail("Home did not land on the first station before the repeat check (" + selIdx() + ")");
+		else {
+			// One tick, three presses — no chance for React to re-render in between.
+			for (let i = 0; i < 3; i += 1) {
+				rootK.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+			}
+			await tick(400);
+			const landed = selIdx();
+			if (landed !== 3) fail("three → presses in one tick advanced to station " + (landed + 1) + " instead of 4 (repeats were merged)");
+			info.repeat = { landed };
+			window.__store.set(Object.assign({ partial: null }, healthySnap));
+			await tick(250);
+		}
+	}
+
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
 	// invisible while the single-step copy AND the whole-trace export printed the whole

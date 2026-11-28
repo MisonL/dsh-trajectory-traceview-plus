@@ -3006,7 +3006,9 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 			const body = grab(name);
 			const box = { hit: "NONE" };
 			const R = revealed === null ? N : Math.min(Math.max(1, revealed), N);
-			const setRevealed = (v) => { box.hit = v; };
+			// React calls an updater with the CURRENT state, so the harness has to as well: the
+			// step functions switched to the updater form so that fast repeats accumulate.
+			const setRevealed = (v) => { box.hit = typeof v === "function" ? v(revealed) : v; };
 			new Function("N", "R", "revealed", "setRevealed", "setPlaying", "setFollow", body + "\n" + name + "();")(
 				N, R, revealed, setRevealed, () => {}, () => {});
 			return box.hit;
@@ -3024,7 +3026,10 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (drive("stepNext", 5, 3) !== 4) throw new Error("NAVOVERVIEW1 → stopped working inside the timeline");
 		if (drive("stepPrev", 5, 3) !== 2) throw new Error("NAVOVERVIEW1 ← stopped working inside the timeline");
 		if (drive("stepNext", 5, 5) !== null) throw new Error("NAVOVERVIEW1 → at the end must return to overview");
-		if (drive("stepPrev", 5, 1) !== "NONE") throw new Error("NAVOVERVIEW1 ← at the first station must stay put");
+		// "Stay put" is a POSITION claim, not a "did not call the setter" claim: the function
+		// now uses the updater form, which re-states the same value and lets React bail out.
+		const atFirst = drive("stepPrev", 5, 1);
+		if (atFirst !== "NONE" && atFirst !== 1) throw new Error("NAVOVERVIEW1 ← at the first station must stay put, got " + atFirst);
 	}
 
 	// ── EXPORTCODE1: the Markdown export must carry what the panel shows ───────
