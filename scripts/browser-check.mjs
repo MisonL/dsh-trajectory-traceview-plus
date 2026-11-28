@@ -29,7 +29,7 @@ run("agent-browser", ["wait", "1200"]);
 // BOTH halves share one page: the browser is opened once and the evals run in order, so
 // `probe-detail.js` continues from the state `probe.js` leaves. Split because
 // `agent-browser eval` aborts at 30 s and the single file had reached 27.4 s (§13.70).
-const probeFiles = ["test/browser/probe.js", "test/browser/probe-detail.js", "test/browser/probe-detail2.js"];
+const probeFiles = ["test/browser/probe.js", "test/browser/probe-detail.js", "test/browser/probe-detail2.js", "test/browser/probe-detail3.js"];
 const probe = fs.readFileSync(path.join(root, probeFiles[0]), "utf8");
 const out = run("agent-browser", ["eval", "--stdin"], probe);
 const raw = (out.stdout || "").trim();

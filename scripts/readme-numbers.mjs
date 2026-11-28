@@ -39,7 +39,7 @@ const localSteps = pkg.scripts.check.split('&&').map((s) => s.trim()).filter(Boo
 // aborts at 30 s and the language switch pushed the single file over it (§13.69) — and
 // leaving it out of this count is exactly the one-source-vs-two-sources blindness this
 // very block has already been fixed for once (§13.44).
-const PROBE_FILES = ['test/browser/probe.js', 'test/browser/probe-detail.js', 'test/browser/probe-detail2.js', 'test/browser/probe-en.js'];
+const PROBE_FILES = ['test/browser/probe.js', 'test/browser/probe-detail.js', 'test/browser/probe-detail2.js', 'test/browser/probe-detail3.js', 'test/browser/probe-en.js'];
 const probes = PROBE_FILES.map((f) => read(f));
 const observedGroups = new Set();
 let assertions = 0;

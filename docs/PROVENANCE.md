@@ -53,6 +53,7 @@
 - `test/browser/fixture.js`
 - `test/browser/probe-detail.js`
 - `test/browser/probe-detail2.js`
+- `test/browser/probe-detail3.js`
 - `test/browser/probe-en.js`
 - `test/browser/probe.js`
 

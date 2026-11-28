@@ -2757,7 +2757,11 @@
 			L.push(`# ${t("export.title")}`);
 			L.push("");
 			const s = tree.stats;
-			L.push(`> ${t("node.turn")} ${s.turns} · ${t("node.step")} ${s.steps} · ${t("node.tool")} ${s.tools} · ${t("kpi.errors")} ${s.errors} · ${t("kpi.tokensIn")} ${fmtTokens(s.tokensIn)} · ${t("kpi.tokensOut")} ${fmtTokens(s.tokensOut)}${s.lastModel ? ` · ${s.lastModel}` : ""}`);
+			// The header KPI strip carries FIVE numbers, and the export carried four: a
+			// reader who saw "900 ms 工具总耗时" on screen and pasted the export into a bug
+			// report lost exactly that number. Same rule as the warning lines below — the
+			// file states what the screen states.
+			L.push(`> ${t("node.turn")} ${s.turns} · ${t("node.step")} ${s.steps} · ${t("node.tool")} ${s.tools} · ${t("kpi.errors")} ${s.errors} · ${t("kpi.toolTime")} ${fmtDur(s.toolMs)} · ${t("kpi.tokensIn")} ${fmtTokens(s.tokensIn)} · ${t("kpi.tokensOut")} ${fmtTokens(s.tokensOut)}${s.lastModel ? ` · ${s.lastModel}` : ""}`);
 			// The panel warns about a damaged or drifting log in its header; the export used
 			// to state only the totals, so a saved "study notes" file silently claimed a
 			// clean read of a log the screen was actively flagging. Same rule as the error

@@ -10719,6 +10719,8 @@ boundary: false     ← 没有渲染失败卡
 | 25 | 压缩重放被标成“调用不在窗口内” | 真实会话 13 组重复 result，全部误标 | `REPLAY1` + 探针 23l（变异 → 红） |
 | 26 | 窗口外系统提示显示成“0 字” | 契约说该场景 `prompt.system` 为空，真文本在 `systemPrompts` | `SYSOUT1` + 探针 23m（变异 → 红） |
 | 27 | 生成中的步骤排到本轮第一步之前 | partial 时间戳用轮次最早 seq + 0.5 | `PARTIALORDER1`（变异 → 红） |
+| 28 | 导出表头少了「工具总耗时」 | 屏幕五项、导出四项 | `EXPORTKPI1` + 探针 23n（变异 → 红） |
+| 29 | 探针涨到 37 秒，变异验证变成「无法解析」 | `eval` 30 秒上限，超时不是失败 | 拆出 `probe-detail3.js`；`healthySnap` 移进 IIFE |
 
 ### 13.82.9 夹具与官方契约的一处偏差：`callSchemas` 是 Map，不是对象
 

@@ -1662,6 +1662,23 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── EXPORTKPI1: the export header must carry every number the KPI strip shows ──
+	// The strip has five: turns / steps / tools / error steps / total tool time. The
+	// export header carried four — a reader pasting it into a bug report lost exactly the
+	// duration number they had just been looking at.
+	{
+		const withTool = deriveTraceTree({
+			eventNodes: [
+				{ kind: "user", seq: 1, time: 1000, turn: 1, content: [{ type: "text", text: "q" }] },
+				{ kind: "assistant", seq: 2, time: 2000, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "tool-call", callId: "c1", name: "bash", argsRaw: "{}" }] },
+				{ kind: "tool-result", seq: 3, time: 2900, turn: 1, step: 1, callId: "c1", name: "bash", callTime: 2000, content: [{ type: "text", text: "out" }] }
+			], requests: [], callSchemas: new Map(), runningCalls: [], partial: null
+		}, t);
+		const head = buildTraceMarkdown(withTool, t).split("\n").slice(0, 4).join("\n");
+		if (!/kpi\.toolTime/.test(head)) throw new Error("EXPORTKPI1 the export header lost the total tool time: " + JSON.stringify(head));
+		if (!/900/.test(head)) throw new Error("EXPORTKPI1 the export header does not state the 900 ms tool time: " + JSON.stringify(head));
+	}
+
 	// ── PARTIALORDER1: the in-flight step belongs at the END of its turn ───────
 	// The streaming partial was stamped `turnEarlySeq + 0.5`, i.e. just after the turn's
 	// FIRST event. When a partial arrived while steps 1 and 2 already existed it sorted
