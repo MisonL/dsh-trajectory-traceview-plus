@@ -1543,7 +1543,7 @@
 						children: [
 							jsx("span", { className: "dstv_name", children: s.who }, "uName"),
 							s.time != null ? jsx("span", { className: "dstv_spanRow", children: jsx("span", { className: "dstv_spanEdge", children: fmtClock(s.time) }, "uClk") }, "uSpan") : null,
-							jsx("div", { className: "dstv_text dstv_clamp3", title: s.text, children: s.text || "…" }, "uText")
+							jsx("div", { className: "dstv_text dstv_clamp3", title: cardTitle(s.text), children: cardText(s.text) || "…" }, "uText")
 						]
 					}, cardKey);
 				}
@@ -1581,8 +1581,8 @@
 										className: "dstv_cellRow",
 										children: [
 											jsx("span", { className: "dstv_cellName", children: t("node.assistant") }, "aName"),
-											cell.thinking !== "" ? jsx("div", { className: "dstv_text dstv_clamp2 sec", title: cell.thinking, children: `💭 ${markdownToPlain(cell.thinking)}` }, "aThink") : null,
-											cell.text !== "" ? jsx("div", { className: "dstv_text dstv_clamp2", title: cell.text, children: markdownToPlain(cell.text) }, "aText") : null
+											cell.thinking !== "" ? jsx("div", { className: "dstv_text dstv_clamp2 sec", title: cardTitle(cell.thinking), children: `💭 ${cardText(markdownToPlain(cardText(cell.thinking)))}` }, "aThink") : null,
+											cell.text !== "" ? jsx("div", { className: "dstv_text dstv_clamp2", title: cardTitle(cell.text), children: cardText(markdownToPlain(cardText(cell.text))) }, "aText") : null
 										]
 									}, `a${cell.id}`);
 								}
@@ -1625,8 +1625,8 @@
 									jsx("span", { className: "dstv_chips", children: [jsx("span", { className: "dstv_chip info", children: t("orphan.badge") }, "oBadge")] }, "oChips")
 								]
 							}, "oName"),
-							s.args !== "" ? jsx("div", { className: "dstv_text dstv_clamp2 sec", title: s.args, children: s.args }, "oArgs") : null,
-							jsx("div", { className: "dstv_text dstv_clamp4", title: body, children: body }, "oText")
+							s.args !== "" ? jsx("div", { className: "dstv_text dstv_clamp2 sec", title: cardTitle(s.args), children: cardText(s.args) }, "oArgs") : null,
+							jsx("div", { className: "dstv_text dstv_clamp4", title: cardTitle(body), children: cardText(body) }, "oText")
 						]
 					}, cardKey);
 				}
@@ -1635,7 +1635,7 @@
 						className: "dstv_hcard compactionCard",
 						children: [
 							jsx("span", { className: "dstv_name", children: `♺ ${t("node.compaction")}` }, "cName"),
-							jsx("div", { className: "dstv_text dstv_clamp2", title: s.summary, children: s.summary || "…" }, "cText")
+							jsx("div", { className: "dstv_text dstv_clamp2", title: cardTitle(s.summary), children: cardText(s.summary) || "…" }, "cText")
 						]
 					}, cardKey);
 				}
@@ -1644,7 +1644,7 @@
 						className: "dstv_hcard errorCard",
 						children: [
 							jsx("span", { className: "dstv_name", children: `✗ ${t("node.error")}` }, "eName"),
-							jsx("div", { className: "dstv_text dstv_clamp2", title: s.message, children: s.message || "…" }, "eText")
+							jsx("div", { className: "dstv_text dstv_clamp2", title: cardTitle(s.message), children: cardText(s.message) || "…" }, "eText")
 						]
 					}, cardKey);
 				}
@@ -1653,7 +1653,7 @@
 						className: "dstv_hcard retryCard",
 						children: [
 							jsx("span", { className: "dstv_name", children: `↻ ${t("node.retry")}${Number.isFinite(s.retry) ? ` #${s.retry}` : ""}` }, "rName"),
-							jsx("div", { className: "dstv_text sec dstv_clamp2", title: s.message, children: s.message || "…" }, "rText")
+							jsx("div", { className: "dstv_text sec dstv_clamp2", title: cardTitle(s.message), children: cardText(s.message) || "…" }, "rText")
 						]
 					}, cardKey);
 				}
@@ -1672,7 +1672,7 @@
 								`${t("node.unknown")}${s.eventType !== "" ? ` · ${s.eventType}` : ""}`,
 								jsx("span", { className: "dstv_chips", children: jsx("span", { className: "dstv_chip", children: `seq ${s.seq}` }, "ukSeq") }, "ukChips")
 							] }, "ukName"),
-							s.payload !== "" ? jsx("div", { className: "dstv_text sec dstv_clamp3", title: s.payload, children: s.payload }, "ukText") : null
+							s.payload !== "" ? jsx("div", { className: "dstv_text sec dstv_clamp3", title: cardTitle(s.payload), children: cardText(s.payload) }, "ukText") : null
 						]
 					}, cardKey);
 				}

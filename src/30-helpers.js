@@ -2663,6 +2663,30 @@
 			}
 			return blocks;
 		}
+		/**
+		 * Hard caps for text that goes into a STATION CARD.
+		 *
+		 * A card shows at most four clamped lines, but `dstv_clamp4` only hides the overflow:
+		 * the text node and the `title` attribute both kept the whole string. Measured with a
+		 * 1 MB assistant message: 1,575 ms to paint one card and 1,000,007 characters in the
+		 * DOM (the tooltip alone carried the megabyte). The full text stays available through
+		 * copy, the detail panel and the export — the card is a thumbnail, not a viewer.
+		 */
+		// 20 000, not 2 000: group 20 of the browser probe renders a 20k body in full and
+		// requires a one-character edit deep inside it to repaint the card. The cap exists to
+		// stop megabyte messages, not to change what a long-but-normal message looks like.
+		const CARD_TEXT_MAX = 20000;
+		const CARD_TITLE_MAX = 300;
+		/** Clamp a string for rendering inside a card, marking that it was cut. */
+		function cardText(v) {
+			const s = typeof v === "string" ? v : v == null ? "" : String(v);
+			return s.length > CARD_TEXT_MAX ? `${s.slice(0, CARD_TEXT_MAX)}…` : s;
+		}
+		/** Clamp a string for a `title` tooltip: a tooltip longer than this is unreadable. */
+		function cardTitle(v) {
+			const s = typeof v === "string" ? v : v == null ? "" : String(v);
+			return s.length > CARD_TITLE_MAX ? `${s.slice(0, CARD_TITLE_MAX)}…` : s;
+		}
 		/** Markdown with markers stripped, for one-line previews. */
 		function markdownToPlain(src) {
 			let out = "";

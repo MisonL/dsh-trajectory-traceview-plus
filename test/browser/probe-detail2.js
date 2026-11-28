@@ -528,6 +528,49 @@
 		}
 	}
 
+	// 23i) a huge message must not be poured into the DOM, and must not be LOST either.
+	// `dstv_clamp4` hides the overflow but the text node and the `title` attribute kept the
+	// whole string: 1 MB of assistant text painted in 1,575 ms with 1,000,007 characters in
+	// the DOM (the tooltip alone carried the megabyte). The card now clamps; copy must still
+	// hand over every byte.
+	{
+		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		const HUGE = "z".repeat(1e6);
+		window.__store.set(Object.assign({ eventNodes: [{ kind: "user", seq: 1, time: 1, turn: 1, content: [{ type: "text", text: HUGE }] }] }, base));
+		await tick(450);
+		const inner = document.querySelector(".dstv_station .dstv_text");
+		if (inner === null) fail("no station text node for the huge-message check");
+		else {
+			const shown = (inner.textContent || "").length;
+			const tip = (inner.getAttribute("title") || "").length;
+			if (shown > 20400) fail("the card rendered " + shown + " characters of a 1 MB message into the DOM");
+			if (tip > 500) fail("the card tooltip carries " + tip + " characters");
+			if (!/…$/.test(inner.textContent || "")) fail("the clamped card text does not say it was cut");
+			// The full text must still be reachable: select the station and copy from the panel.
+			const rootEl = document.querySelector(".dstv_root");
+			const opts = [...document.querySelectorAll("[role=option]")];
+			opts[0].click();
+			await tick(400);
+			const copyBtn = [...document.querySelectorAll(".dstv_root button")].find((b) => (b.getAttribute("aria-label") || "").indexOf("复制") >= 0 || (b.title || "").indexOf("复制") >= 0);
+			if (copyBtn === void 0) fail("no copy button in the detail panel for the huge-message check");
+			else {
+				copyBtn.click();
+				await tick(500);
+				const tail = wrote.slice(-1)[0];
+				const last = tail === void 0 ? "" : String(tail);
+				// A lower bound, not equality: this button copies the whole step, which is the
+				// 1 MB body plus its headings (measured 1,000,088). The property under test is
+				// that clamping the CARD does not clamp what you get out of the panel.
+				if (last.length < 1e6) {
+					fail("copying a clamped card handed over only " + last.length + " characters of a 1000000-character message");
+				}
+				info.huge = { shown, tip, copied: last.length };
+			}
+			window.__store.set(Object.assign({ partial: null }, healthySnap));
+			await tick(250);
+		}
+	}
+
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
 	// invisible while the single-step copy AND the whole-trace export printed the whole
