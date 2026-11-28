@@ -10718,6 +10718,25 @@ boundary: false     ← 没有渲染失败卡
 | 24 | 锚点“向前翻页直到命中”无端到端覆盖 | 夹具 `loadOlder` 秒回且不加载，只能测两端点 | 探针 23k（变异 → 红） |
 | 25 | 压缩重放被标成“调用不在窗口内” | 真实会话 13 组重复 result，全部误标 | `REPLAY1` + 探针 23l（变异 → 红） |
 
+### 13.82.9 夹具与官方契约的一处偏差：`callSchemas` 是 Map，不是对象
+
+对着 DSH 的 `trajectory-contract.d.ts` 核对了一遍 `TrajectorySnapshot`：
+
+```ts
+readonly callSchemas: ReadonlyMap<string, ConversationPromptSnapshot['tools'][number]>;
+readonly eventNodes: readonly ConversationNode[];
+readonly requests: readonly RequestView[];
+readonly runningCalls: readonly RunningToolCall[];
+```
+
+插件读它的方式是对的（`snap?.callSchemas instanceof Map ? … : new Map()`），但**夹具一直传
+`callSchemas: {}`**——普通对象，被插件正确地当成"没有 schema"。后果不是崩溃，而是：
+浏览器侧关于 schema 的那条路径**一年来没有任何数据**，测了也等于没测。
+
+顺带确认：`cell.schema`（每格挂上工具定义）在数据层有断言（smoke），但**渲染、详情、导出都不读它**，
+所以它对读者目前没有可见效果。保留是因为那个字段是给"工具定义变化"这类排查留的入口，
+但不要以为它现在是活的。夹具改成真 Map，至少让这条路径有数据可跑。
+
 ### 13.83.0 一个"看起来在保护你"的守卫可能压根不可达
 
 `onKeyDown` 里有一行 `if (tag === "input" || tag === "textarea" ...) return;`，注释写着"别抢输入框的键"。

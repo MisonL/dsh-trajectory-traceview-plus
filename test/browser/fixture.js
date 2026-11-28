@@ -83,7 +83,18 @@
 		];
 	}
 
-	var store = makeStore({ eventNodes: buildNodes({ extraTurns: 3 }), requests: buildRequests(), callSchemas: {}, runningCalls: [], partial: null });
+	// `callSchemas` is a ReadonlyMap in the official TrajectorySnapshot, not a plain object.
+// The fixture shipped `{}` for a year, which the plugin correctly treats as "no schemas" —
+// so the schema path had data in no browser test at all. Real hosts send a Map.
+	var store = makeStore({
+		eventNodes: buildNodes({ extraTurns: 3 }),
+		requests: buildRequests(),
+		callSchemas: new Map([
+			["c1", { name: "pwsh", description: "Run a PowerShell command", parameters: { type: "object", properties: { cmd: { type: "string" } } } }]
+		]),
+		runningCalls: [],
+		partial: null
+	});
 	var sessionStore = makeStore({ openState: "open", hasMore: true, historyLoadStatus: "idle", loadingOlder: false });
 	// How many prepared "older" pages the fixture hands back before it says hasMore=false.
 	var olderPagesDrained = 0;
