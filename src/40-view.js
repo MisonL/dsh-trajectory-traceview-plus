@@ -389,9 +389,13 @@
 					requests: snap.requests,
 					callSchemas: snap.callSchemas,
 					runningCalls: snap.runningCalls,
+					// Passed through for the "system prompt sits outside the loaded window"
+					// case: the contract leaves `request.prompt.system` EMPTY there, and the
+					// real text only exists on the snapshot.
+					systemPrompts: snap.systemPrompts,
 					partial: partialRef.current
 				}, t),
-				[snap.eventNodes, snap.requests, snap.callSchemas, snap.runningCalls, partialSig, streamTick, t]
+				[snap.eventNodes, snap.requests, snap.callSchemas, snap.runningCalls, snap.systemPrompts, partialSig, streamTick, t]
 			);
 			const stations = tree.stations;
 			const stationsRef = (0, react.useRef)(stations);
@@ -2170,6 +2174,12 @@
 				// fields can be drifted. Normalise ONCE here — every reader below
 				// (`tools.map`, the JSON previews, the React keys) then sees a safe shape.
 				const tools = safeToolList(req.prompt?.tools);
+				// The contract says `prompt.system` is EMPTY when the system node sits outside the
+				// loaded window; the snapshot still carries it (`systemFrom`, filled by the fold).
+				// Showing "0 chars" there was a silent lie about what the model saw.
+				const savedPrompt = req.systemFrom !== null && req.systemFrom !== void 0 ? req.systemFrom : null;
+				const systemText = (req.prompt?.system ?? "") !== "" ? req.prompt.system
+					: (savedPrompt !== null ? String(savedPrompt.text ?? "") : "");
 				const diff = req.promptDiff ?? null;
 				const evidenceChips = evidenceOf(req, activeMessages, hasMore);
 
@@ -2180,7 +2190,7 @@
 					temperature: cfg.temperature,
 					reasoningEffort: cfg.reasoningEffort,
 					maxTokens: cfg.maxTokens,
-					system: req.prompt?.system ?? "",
+					system: systemText,
 					tools: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })),
 					messages: messages.map((m) => m.role === "note"
 						? { role: "user", content: [{ type: "text", text: m.text }] }
@@ -2194,7 +2204,7 @@
 				// else; the request tab was the only place that called JSON directly.
 				const payloadJson = safeJsonPreview(payload, Number.MAX_SAFE_INTEGER, 2);
 				const sysToolsJson = safeJsonPreview(tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })), Number.MAX_SAFE_INTEGER, 2);
-				const sysJson = safeJsonPreview({ system: req.prompt?.system ?? "", tools: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }, Number.MAX_SAFE_INTEGER, 2);
+				const sysJson = safeJsonPreview({ system: systemText, tools: tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }, Number.MAX_SAFE_INTEGER, 2);
 
 				return jsxs("div", { className: "dstv_dBody", children: [
 					// config + lifecycle chips
@@ -2247,13 +2257,14 @@
 					req.prompt !== null ? jsxs("div", { className: "dstv_dSection", children: [
 						jsxs("div", { className: "dstv_dSecHead", children: [
 							jsx("span", { children: `🧠 ${t("detail.systemPrompt")}` }, "spHead"),
-							jsx("span", { className: "sub", children: `${fmtInt(req.prompt.systemChars)} ${t("detail.chars")}` }, "spLen"),
+							jsx("span", { className: "sub", children: `${fmtInt(systemText.length)} ${t("detail.chars")}` }, "spLen"),
+							savedPrompt !== null ? jsx("span", { className: "sub", children: t("detail.systemOutside").replace("{seq}", String(savedPrompt.seq)) }, "spOut") : null,
 							jsx("span", { className: "grow" }, "spGrow"),
 							jsx(CopyBtn, { text: sysJson, label: t("detail.copy"), okLabel: t("detail.copied"), failLabel: t("anchor.copyFailed") }, "spCopy")
 						] }, "spSecHead"),
 						jsxs("details", { className: "dstv_det", open: false, children: [
 							jsx("summary", { children: [t("detail.systemPrompt")] }, "spSum"),
-							jsx("div", { className: "inner", children: jsx("div", { className: "dstv_code", style: { maxHeight: 220 }, children: req.prompt.system || "…" }, "spCode") }, "spInner")
+							jsx("div", { className: "inner", children: jsx("div", { className: "dstv_code", style: { maxHeight: 220 }, children: systemText !== "" ? systemText : t("detail.systemNone") }, "spCode") }, "spInner")
 						] }, "spDet")
 					] }, "spSec") : null,
 					// tool catalog

@@ -1020,6 +1020,21 @@
 			return null;
 		}
 		function deriveTraceTree(snap, t) {
+			// The official contract is explicit that `prompt.system` is empty when the
+			// `system/message` node "lies outside the loaded history window" — the text itself is
+			// still available on the snapshot as `systemPrompts`. Without this, a window that starts
+			// mid-conversation claimed the request carried NO system prompt (0 chars, "…" on screen),
+			// which is a silent lie about what the model actually saw.
+			const systemPrompts = Array.isArray(snap?.systemPrompts)
+				? snap.systemPrompts.filter((s) => s != null && typeof s === "object" && typeof s.text === "string" && s.text !== "")
+					.slice().sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0))
+				: [];
+			const systemPromptBefore = (seq) => {
+				if (!Number.isFinite(seq)) return null;
+				let pick = null;
+				for (const s of systemPrompts) { if (Number(s.seq) <= seq) pick = s; else break; }
+				return pick;
+			};
 			const rawNodes = safeList(snap?.eventNodes);
 			// Only pay for the copy when a node actually needs repairing: a well-formed
 			// snapshot (the normal case) proceeds with the objects the host handed us.
@@ -1898,6 +1913,15 @@
 									tools: Array.isArray(found.prompt.tools) ? found.prompt.tools : [],
 									systemChars: typeof found.prompt.system === "string" ? found.prompt.system.length : 0
 								} : null,
+								// Present only when the request header's own prompt text is empty AND an older
+								// system event exists: the reader then sees the real text, labelled as coming from
+								// outside the window, instead of "0 chars".
+								systemFrom: (() => {
+									const own = found.prompt != null && typeof found.prompt.system === "string" ? found.prompt.system : "";
+									if (own !== "") return null;
+									const older = systemPromptBefore(Number(r.startSeq));
+									return older !== null ? { seq: Number(older.seq), text: older.text, update: older.update === true } : null;
+								})(),
 								promptChangeKind: r.promptChange?.kind ?? null,
 								promptDiff: promptDiffOf(r.promptChange, found.prompt),
 								startSeq: r.startSeq ?? null

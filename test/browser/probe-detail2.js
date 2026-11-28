@@ -684,6 +684,41 @@
 		await tick(250);
 	}
 
+	// 23m) a window that starts mid-conversation must still show the real system prompt.
+	// `prompt.system` is empty in that case (contract), and the panel used to print
+	// "0 字" + "…" — claiming the model ran without a system prompt.
+	{
+		const base = { callSchemas: new Map(), runningCalls: [], partial: null };
+		window.__store.set(Object.assign({
+			eventNodes: [
+				{ kind: "user", seq: 100, time: 1000, turn: 1, content: [{ type: "text", text: "问" }] },
+				{ kind: "assistant", seq: 101, time: 2000, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "text", text: "答" }] }
+			],
+			systemPrompts: [{ seq: 2, time: 500, turn: 0, step: 0, text: "你是助手，这是被窗口切掉的系统提示。", update: false }],
+			requests: [{ purpose: "assistant", turn: 1, step: 1, status: "complete", startSeq: 100, startedAt: 900, completedAt: 2500, prompt: { system: "", tools: [], config: {} } }]
+		}, base));
+		await tick(700);
+		const optsS = [...document.querySelectorAll("[role=option]")];
+		if (optsS.length < 2) fail("the system-prompt fixture did not render two stations");
+		else {
+			optsS[1].click();
+			await tick(500);
+			const reqTab = [...document.querySelectorAll("button.dstv_tab")].find((x) => (x.textContent || "").indexOf("原始请求") >= 0);
+			if (reqTab === void 0) fail("no 原始请求 tab for the system-prompt check");
+			else {
+				reqTab.click();
+				await tick(600);
+				const body = document.querySelector(".dstv_root").textContent || "";
+				if (!/被窗口切掉的系统提示/.test(body)) fail("the system prompt that sits outside the window was not shown at all");
+				if (!/来自窗口外的系统事件 e2/.test(body)) fail("the recovered system prompt is not labelled as coming from outside the window");
+				if (/0 字/.test(body)) fail("the request page still reports 0 chars for a request that does have a system prompt");
+				info.sysOutside = { ok: true };
+			}
+		}
+		window.__store.set(Object.assign({ partial: null }, healthySnap));
+		await tick(250);
+	}
+
 	// 24) nested sub-calls must reach the screen, not just the copy.
 	// The detail panel rendered exactly one level of `subCalls`; everything deeper was
 	// invisible while the single-step copy AND the whole-trace export printed the whole

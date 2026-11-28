@@ -1662,6 +1662,26 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── SYSOUT1: the system prompt of a window that starts mid-conversation ────
+	// The official contract says `prompt.system` is EMPTY when the `system/message` node
+	// "lies outside the loaded history window"; the text still exists on the snapshot as
+	// `systemPrompts`. The panel showed "0 chars" + "…" for such requests, i.e. it claimed
+	// the model ran with no system prompt at all.
+	{
+		const sysNodes = [
+			{ kind: "user", seq: 100, time: 1000, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "assistant", seq: 101, time: 2000, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "text", text: "a" }] }
+		];
+		const oneReq = (system) => ({ purpose: "assistant", turn: 1, step: 1, status: "complete", startSeq: 100, startedAt: 900, completedAt: 2500, prompt: { system, tools: [], config: {} } });
+		const pick = (tree) => { const st = tree.stations.find((x) => x.kind === "step"); return st != null && st.request != null ? st.request.systemFrom : void 0; };
+		const outside = pick(deriveTraceTree({ eventNodes: sysNodes, requests: [oneReq("")], callSchemas: new Map(), runningCalls: [], partial: null, systemPrompts: [{ seq: 2, time: 500, turn: 0, step: 0, text: "你是助手。", update: false }] }, t));
+		if (outside == null || outside.seq !== 2 || outside.text !== "你是助手。") throw new Error("SYSOUT1 the window-outside system prompt was not recovered: " + JSON.stringify(outside));
+		const inside = pick(deriveTraceTree({ eventNodes: sysNodes, requests: [oneReq("窗口内提示")], callSchemas: new Map(), runningCalls: [], partial: null, systemPrompts: [{ seq: 2, time: 500, turn: 0, step: 0, text: "旧提示", update: false }] }, t));
+		if (inside !== null) throw new Error("SYSOUT1 a request carrying its own system text must not be overridden: " + JSON.stringify(inside));
+		const none = pick(deriveTraceTree({ eventNodes: sysNodes, requests: [oneReq("")], callSchemas: new Map(), runningCalls: [], partial: null }, t));
+		if (none !== null) throw new Error("SYSOUT1 a genuinely absent system prompt must stay absent: " + JSON.stringify(none));
+	}
+
 	// ── REPLAY1: a compaction replay is not an orphan ─────────────────────────
 	// DSH re-sends tool results after a compaction under the SAME callId at a much later
 	// seq (measured: 13 such groups in one 17k-event session). Those results have no call

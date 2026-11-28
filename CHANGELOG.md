@@ -21,6 +21,16 @@
   按键都把空格抹掉，`alpha beta` 逐字输入会变成 `alphabeta`。现在绑定原始输入，匹配仍用修剪值。
 - **详情面板只渲染一层子调用。** 工具套工具的链条从第二层起在屏幕上消失，而单步复制和整段
   导出都有——屏幕显示的内容严格少于你复制出来的文件。现在递归渲染，新增第 24 组断言。
+- **窗口从中间开始时，系统提示显示成"0 字"。** 官方契约写得很清楚：`prompt.system` 在
+  "the `system/message` node lies outside the loaded history window" 时是**空字符串**，
+  而真实文本在快照的 `systemPrompts` 里。插件两个字段都没用 `systemPrompts`，于是请求页写
+  `0 字` + `…`——等于告诉读者"这次请求没有系统提示"，而模型明明带着一整套提示在跑。
+  现在投影层按 `startSeq` 取「seq ≤ 该请求」的最后一条系统提示，填进 `systemFrom`；
+  请求页显示真实文本并标注 `来自窗口外的系统事件 e2`，字符数按真实文本算；
+  确实没有系统提示时才显示"（当前窗口内没有系统提示）"。
+  断言 `SYSOUT1`（投影三种情况）与探针 23m（屏幕）；变异（断开 `systemPrompts` 接线）→ 三条同时红。
+  这次差点漏掉接线：投影层改对了，视图层传给 `deriveTraceTree` 的对象里根本没带
+  `systemPrompts`——是浏览器里那句"0 字"还在才发现的。
 - **夹具把 `callSchemas` 传成了普通对象，官方契约是 `Map`。** 对着 DSH 的
   `trajectory-contract.d.ts` 核对时发现的：插件自己是对的（`instanceof Map` 判断），
   但夹具一直给 `{}`，被正确地当成"没有 schema"——于是浏览器侧关于 schema 的那条路径
