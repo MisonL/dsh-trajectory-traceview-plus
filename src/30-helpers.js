@@ -1498,7 +1498,22 @@
 			const p = snap?.partial;
 			if (p != null && Array.isArray(p.blocks) && p.blocks.length > 0) {
 				const turn = typeof p.turn === "number" ? p.turn : 0;
-				const seq = lastTurnEntry != null ? lastTurnEntry.seq + 0.5 : 0.5;
+				// The in-flight step belongs at the END of its turn, not just after the turn's
+				// first event. `+0.5` was added to the turn's EARLIEST seq, so a partial that
+				// arrived while steps 1 and 2 already existed sorted BEFORE step 1: the
+				// "running" card appeared to the left of finished work (measured order
+				// user → step3(live) → step1 → step2). Take the turn's largest known seq.
+				const seq = (() => {
+					if (lastTurnEntry == null) return 0.5;
+					let maxSeq = lastTurnEntry.seq;
+					for (const st0 of lastTurnEntry.steps?.values() ?? []) {
+						if (Number.isFinite(st0.seq) && st0.seq > maxSeq) maxSeq = st0.seq;
+					}
+					for (const s0 of lastTurnEntry.stations) {
+						if (Number.isFinite(s0.seq) && s0.seq > maxSeq) maxSeq = s0.seq;
+					}
+					return maxSeq + 0.5;
+				})();
 				flushUser(turn, seq);
 				const e = ensureTurn(turn, seq);
 				const step = stepOf(p.step);

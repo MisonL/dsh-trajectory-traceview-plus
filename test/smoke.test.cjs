@@ -1662,6 +1662,29 @@ if (!liveStep.cells.some((c) => c.kind === "assistant" && c.text.includes("正�
 		if (!md.includes("REAL_RESULT")) throw new Error("EXPORT1 the tool result was swallowed by an unescaped fence");
 	}
 
+	// ── PARTIALORDER1: the in-flight step belongs at the END of its turn ───────
+	// The streaming partial was stamped `turnEarlySeq + 0.5`, i.e. just after the turn's
+	// FIRST event. When a partial arrived while steps 1 and 2 already existed it sorted
+	// BEFORE step 1, so the "running" card sat to the left of finished work (measured
+	// order: user → step3(live) → step1 → step2).
+	{
+		const evP = [
+			{ kind: "user", seq: 1, time: 1000, turn: 1, content: [{ type: "text", text: "q" }] },
+			{ kind: "assistant", seq: 2, time: 2000, turn: 1, step: 1, messageId: "m1", blocks: [{ kind: "text", text: "s1" }] },
+			{ kind: "assistant", seq: 3, time: 3000, turn: 1, step: 2, messageId: "m2", blocks: [{ kind: "text", text: "s2" }] }
+		];
+		const withPartial = { eventNodes: evP, requests: [], callSchemas: new Map(), runningCalls: [], partial: { turn: 1, step: 3, blocks: [{ kind: "text", text: "s3" }] } };
+		const orderP = deriveTraceTree(withPartial, t).stations.map((s) => (s.kind === "step" ? s.turnStep : s.kind));
+		const expected = ["user", 1, 2, 3];
+		if (JSON.stringify(orderP) !== JSON.stringify(expected)) throw new Error("PARTIALORDER1 expected " + JSON.stringify(expected) + ", got " + JSON.stringify(orderP));
+		const liveStation = deriveTraceTree(withPartial, t).stations.filter((s) => s.kind === "step").pop();
+		if (liveStation.turnStep !== 3 || liveStation.live !== true) throw new Error("PARTIALORDER1 the LAST station must be the live step 3, got " + JSON.stringify({ turnStep: liveStation.turnStep, live: liveStation.live }));
+		// A partial in the FIRST step of a turn must still land after its user message.
+		const firstStep = { eventNodes: evP.slice(0, 1), requests: [], callSchemas: new Map(), runningCalls: [], partial: { turn: 1, step: 1, blocks: [{ kind: "text", text: "s1" }] } };
+		const orderFirst = deriveTraceTree(firstStep, t).stations.map((s) => (s.kind === "step" ? s.turnStep : s.kind));
+		if (JSON.stringify(orderFirst) !== JSON.stringify(["user", 1])) throw new Error("PARTIALORDER1 a first-step partial must follow its user message, got " + JSON.stringify(orderFirst));
+	}
+
 	// ── SYSOUT1: the system prompt of a window that starts mid-conversation ────
 	// The official contract says `prompt.system` is EMPTY when the `system/message` node
 	// "lies outside the loaded history window"; the text still exists on the snapshot as
