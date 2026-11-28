@@ -195,7 +195,7 @@ Open any session with an AI execution trace → a "Trace View" tab appears next 
 |---|---|
 | `←` / `→` | previous / next station |
 | `Home` | jump to the first station (and select it) |
-| `End` | show all: back to the overview with nothing selected (NOT "jump to the last station") |
+| `End` | show all: back to the overview with nothing selected (NOT "jump to the last station") ¹ |
 | `Space` | play / pause replay |
 | `PageUp` / `PageDown` | previous / next turn start |
 | `/` or `f` | focus the search box |
@@ -203,6 +203,16 @@ Open any session with an AI execution trace → a "Trace View" tab appears next 
 | `Enter` / `Shift+Enter` (searching) | next / previous hit |
 | `Esc` | clear search / dismiss |
 | `r` | toggle the "Raw Request" panel |
+
+¹ `End` means different things depending on what has focus — two separate handlers, not two names for one key:
+
+| Focus on | `End` does | Selection |
+|---|---|---|
+| the panel root | show all, back to the overview | cleared |
+| a station card | jump to the last station (listbox convention) | **unchanged** (focus only) |
+| a text field (search, anchor) | the panel does not handle it; the browser moves the caret | unchanged |
+
+All three are asserted by the keyboard group in `probe.js`.
 
 ## 8. Implementation notes (data sources)
 
@@ -258,7 +268,7 @@ The tests run the helper region against mock snapshots covering: tree building /
 **What needs a real browser** (`react-dom/server` cannot see scroll, focus, clipboard, intervals or layout):
 
 ```powershell
-node scripts/browser-check.mjs          # builds the harness; 286 assertions over 43 recorded groups
+node scripts/browser-check.mjs          # builds the harness; 288 assertions over 43 recorded groups
 node scripts/browser-check.mjs --shots  # saves screenshots and adds 1 more group / 3 assertions: 375px overflow (44 total)
 ```
 

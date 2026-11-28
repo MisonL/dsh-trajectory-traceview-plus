@@ -174,6 +174,26 @@
 				root.focus();
 				await press("End");
 				if (selected().length !== 0) fail("`End` on the panel root did not return to the overview (still selected " + JSON.stringify(selected()) + ")");
+				// README footnote: inside an input the panel must not intercept `End` at all.
+				// Asserted on the ANCHOR box, not the search box: the search box has its own
+				// handler that calls `stopPropagation`, so a check there would pass even with
+				// the panel-level `input` guard removed (measured: it did). The anchor box has
+				// no handler of its own, so its keys reach the panel and only the guard saves
+				// them.
+				opts()[2].click();
+				await tick(150);
+				const anchorBox = document.querySelector("input.dstv_anchorInput");
+				if (anchorBox === null) fail("no anchor input for the `End`-in-input check");
+				else {
+					anchorBox.focus();
+					await press("End");
+					if (selected().length === 0) {
+						fail("`End` inside a text input cleared the selection; the panel-level input guard is gone");
+					}
+					document.querySelector(".dstv_root").focus();
+					await press("End");
+					await tick(100);
+				}
 			}
 		}
 
