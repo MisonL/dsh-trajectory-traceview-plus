@@ -85,6 +85,8 @@
 
 	var store = makeStore({ eventNodes: buildNodes({ extraTurns: 3 }), requests: buildRequests(), callSchemas: {}, runningCalls: [], partial: null });
 	var sessionStore = makeStore({ openState: "open", hasMore: true, historyLoadStatus: "idle", loadingOlder: false });
+	// How many prepared "older" pages the fixture hands back before it says hasMore=false.
+	var olderPagesDrained = 0;
 	window.__store = store;
 	window.__sessionStore = sessionStore;
 
@@ -110,7 +112,41 @@
 	var ctx = {
 		effect: function (fn) { fn(); },
 		locale: host,
-		sessions: { binding: function () { return { session: { getSnapshot: function () { return sessionStore.value; }, loadOlder: function () { return Promise.resolve(); } } }; } },
+		// `loadOlder` used to resolve instantly and load NOTHING, so the anchor-jump loop
+		// ("paste an anchor, page backwards until it is covered") could never reach a real
+		// page and that whole path was untested end to end. It now prepends one older turn
+		// after a short delay and flips `hasMore` off when the fixture runs out, so the probe
+		// can drive a REAL paging jump — and cancel one halfway through.
+		sessions: {
+			binding: function () {
+				return {
+					session: {
+						getSnapshot: function () { return sessionStore.value; },
+						loadOlder: function () {
+							if (olderPagesDrained >= 3) {
+								sessionStore.set(Object.assign({}, sessionStore.value, { hasMore: false }));
+								return Promise.resolve();
+							}
+							olderPagesDrained += 1;
+							return new Promise(function (resolve) {
+								setTimeout(function () {
+									var cur = store.value.eventNodes || [];
+									var firstSeq = cur.length > 0 ? Number(cur[0].seq) : 100;
+									var older = [];
+									for (var k = 3; k >= 1; k -= 1) {
+										var q = firstSeq - k;
+										older.push({ kind: "user", seq: q, time: Date.UTC(2026, 10, 19, 2, 0, 0) + q * 1000, turn: -k, content: [{ type: "text", text: "更早的问题 " + q }] });
+									}
+									store.set(Object.assign({}, store.value, { eventNodes: older.concat(cur) }));
+									if (olderPagesDrained >= 3) sessionStore.set(Object.assign({}, sessionStore.value, { hasMore: false }));
+									resolve();
+								}, 60);
+							});
+						}
+					}
+				};
+			}
+		},
 		slots: {
 			inject: function (name, fn) { if (fn) fn(); },
 			register: function (spec, Component) { captured = { spec: spec, Component: Component }; return {}; }

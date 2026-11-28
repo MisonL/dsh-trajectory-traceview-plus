@@ -393,6 +393,10 @@
 		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
 		const viewKeys = () => Object.keys(window.sessionStorage).filter((k) => k.indexOf("dstv:view:") === 0);
 		for (const k of viewKeys()) window.sessionStorage.removeItem(k);
+		// The fixture can now load older history for real, and selecting a station scrolls the
+		// list enough to trigger it. These two groups build their windows by hand, so turn that
+		// off rather than fight it.
+		if (window.__sessionStore) window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: false }));
 		window.__store.set(Object.assign({ eventNodes: mkT(1, 10) }, base));
 		await tick(500);
 		const opts = () => [...document.querySelectorAll("[role=option]")];
@@ -429,6 +433,7 @@
 						fail("after a remount the first page load moved the selection from " + JSON.stringify(restored) + " to " + JSON.stringify(after) + " (index kept, station lost)");
 					}
 					info.remountPrepend = { restored, after };
+				if (window.__sessionStore) window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: true }));
 					window.__store.set(Object.assign({ partial: null }, healthySnap));
 					await tick(250);
 				}
@@ -450,6 +455,7 @@
 		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
 		const viewKeys = () => Object.keys(window.sessionStorage).filter((k) => k.indexOf("dstv:view:") === 0);
 		for (const k of viewKeys()) window.sessionStorage.removeItem(k);
+		if (window.__sessionStore) window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: false }));
 		window.__store.set(Object.assign({ eventNodes: mkT(1, 10) }, base));
 		await tick(450);
 		const opts = () => [...document.querySelectorAll("[role=option]")];
@@ -485,6 +491,7 @@
 				const after = textOf();
 				if (after !== before) fail("after an empty first frame the first page load moved the selection from " + JSON.stringify(before) + " to " + JSON.stringify(after));
 				info.emptyFrame = { before, after };
+				if (window.__sessionStore) window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: true }));
 				window.__store.set(Object.assign({ partial: null }, healthySnap));
 				await tick(250);
 			}
@@ -599,6 +606,49 @@
 			const landed = selIdx();
 			if (landed !== 3) fail("three → presses in one tick advanced to station " + (landed + 1) + " instead of 4 (repeats were merged)");
 			info.repeat = { landed };
+			window.__store.set(Object.assign({ partial: null }, healthySnap));
+			await tick(250);
+		}
+	}
+
+	// 23k) an anchor OUTSIDE the window must page backwards until it is covered.
+	// README §2's headline promise is "paste an anchor, press Enter, land on it". The probe
+	// only ever tested an anchor INSIDE the loaded window and the "not in this window" note —
+	// the paging loop between those two states was never exercised, because the fixture's
+	// `loadOlder` resolved instantly and loaded nothing. It now really prepends, so this can
+	// be driven end to end.
+	{
+		const mkN = (from, to) => {
+			const out = [];
+			for (let i = from; i <= to; i += 1) out.push({ kind: "user", seq: i, time: 1000 + i * 1000, turn: i, content: [{ type: "text", text: "N" + i }] });
+			return out;
+		};
+		const base = { requests: [], callSchemas: {}, runningCalls: {}, partial: null };
+		if (window.__sessionStore) window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: true, loadingOlder: false }));
+		window.__store.set(Object.assign({ eventNodes: mkN(100, 109) }, base));
+		await tick(500);
+		const box = document.querySelector("input.dstv_anchorInput");
+		const optsN = () => [...document.querySelectorAll("[role=option]")];
+		if (box === null) fail("no anchor box for the paging-jump check");
+		else if (optsN().length !== 10) fail("the fixture did not start at 10 stations (" + optsN().length + ")");
+		else {
+			const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(box), "value").set;
+			setter.call(box, "tvp1:e97");
+			box.dispatchEvent(new Event("input", { bubbles: true }));
+			box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+			// The fixture prepends 3 stations per page after a 60 ms delay.
+			let landed = -1;
+			for (let i = 0; i < 10 && landed < 0; i += 1) {
+				await tick(300);
+				landed = optsN().findIndex((o) => o.getAttribute("aria-selected") === "true");
+			}
+			const grew = optsN().length;
+			const note = [...document.querySelectorAll(".dstv_chip.warn")].map((e) => (e.textContent || "").trim()).join("/");
+			if (grew <= 10) fail("pasting an anchor outside the window loaded no older history (" + grew + " stations)");
+			if (landed !== 0) fail("pasting tvp1:e97 selected station " + landed + " after paging, expected the first (seq 97)");
+			if (/不在当前窗口/.test(note)) fail("the anchor WAS reachable by paging but the panel said it is not in the window: " + JSON.stringify(note));
+			info.anchorPaging = { stations: grew, landed, note };
+			window.__sessionStore.set(Object.assign({}, window.__sessionStore.value, { hasMore: false }));
 			window.__store.set(Object.assign({ partial: null }, healthySnap));
 			await tick(250);
 		}
